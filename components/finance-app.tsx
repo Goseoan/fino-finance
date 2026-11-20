@@ -1,4 +1,5 @@
 "use client";
+import { PayrollManager } from "./payroll-manager";
 import { StoragePanel, downloadExcel } from "./storage-panel";
 import {
   ASSET_TYPES,
@@ -13,6 +14,7 @@ import { MoneyInput } from "./ui/money-input";
 import { formatMoneyInput } from "@/lib/money-input";
 import { useEffect, useState, useRef } from "react";
 import {
+  FileText,
   LayoutDashboard,
   Wallet,
   ChartNoAxesCombined,
@@ -89,6 +91,7 @@ const sections = [
   { name: "고정지출", icon: ReceiptText },
   { name: "대출 관리", icon: Landmark },
   { name: "이력 및 통계", icon: ChartNoAxesCombined },
+  { name: "급여명세서", icon: FileText },
   { name: "설정", icon: Settings },
 ];
 export default function FinanceApp() {
@@ -487,7 +490,7 @@ export default function FinanceApp() {
           </div>
           <div className="nav-caption">내 자산</div>
           <nav>
-            {sections.slice(0, 6).map(({ name, icon: Icon }, i) => (
+            {sections.slice(0, -1).map(({ name, icon: Icon }, i) => (
               <button
                 key={name}
                 onClick={() => navigate(name)}
@@ -1110,6 +1113,7 @@ export default function FinanceApp() {
                 )}
               </>
             )}
+            {section === "급여명세서" && <PayrollManager readOnly={!!readOnly} />}
             {section === "고정지출" && (
               <>
                 <div className="stat-row">
@@ -1680,7 +1684,7 @@ export default function FinanceApp() {
                     setPendingAction({
                       title: "전체 데이터 삭제",
                       description:
-                        "현재 앱의 자산·지출·대출·스냅샷·수정 이력을 모두 비우고 휴지통에 보관합니다. 원본과 기존 Google 관리 탭은 변경하지 않습니다.",
+                        "급여명세서를 제외한 자산·지출·대출·스냅샷·수정 이력을 모두 비우고 휴지통에 보관합니다. 원본과 기존 Google 관리 탭은 변경하지 않습니다.",
                       body: {
                         kind: "clearAll",
                         requestId: crypto.randomUUID(),
@@ -1797,7 +1801,7 @@ export default function FinanceApp() {
                       <Download size={19} />
                     </span>
                     <div>
-                      <b>전체 데이터 내보내기</b>
+                      <b>자산·지출·대출 백업</b>
                       <p>자산·지출·스냅샷·수정 이력을 JSON으로 저장</p>
                     </div>
                     <Button variant="outline" onClick={exportData}>

@@ -1,0 +1,105 @@
+import { type ExportTable } from "./excel-export";
+import { type PayrollState } from "./payroll";
+export function payrollExportTables(s: PayrollState): ExportTable[] {
+  return [
+    {
+      name: "급여명세서",
+      headers: [
+        "ID",
+        "이름",
+        "귀속월",
+        "지급일",
+        "구분",
+        "회사",
+        "확인 상태",
+        "지급액",
+        "공제액",
+        "실수령액",
+        "사진 수",
+        "메모",
+        "삭제일",
+      ],
+      rows: s.records.map((p) => [
+        p.id,
+        p.title,
+        p.period,
+        p.paymentDate,
+        p.kind,
+        p.employer,
+        p.status === "confirmed" ? "확인 완료" : "검토 대기",
+        p.gross,
+        p.deducted,
+        p.net,
+        p.imageIds.length,
+        p.note,
+        p.deletedAt ?? null,
+      ]),
+    },
+    {
+      name: "지급·공제 항목",
+      headers: ["명세서 ID", "귀속월", "이름", "유형", "항목명", "금액"],
+      rows: s.records.flatMap((p) => [
+        ...p.earnings.map((r) => [
+          p.id,
+          p.period,
+          p.title,
+          "지급",
+          r.label,
+          r.amount,
+        ]),
+        ...p.deductions.map((r) => [
+          p.id,
+          p.period,
+          p.title,
+          "공제",
+          r.label,
+          r.amount,
+        ]),
+      ]),
+    },
+    {
+      name: "급여 수정 이력",
+      headers: [
+        "시각",
+        "명세서 ID",
+        "작업",
+        "귀속월 이전",
+        "귀속월 이후",
+        "지급액 이전",
+        "지급액 이후",
+        "공제액 이전",
+        "공제액 이후",
+        "실수령액 이전",
+        "실수령액 이후",
+      ],
+      rows: s.audit.map((a) => [
+        a.at,
+        a.recordId,
+        a.action,
+        a.before?.period ?? null,
+        a.after?.period ?? null,
+        a.before?.gross ?? null,
+        a.after?.gross ?? null,
+        a.before?.deducted ?? null,
+        a.after?.deducted ?? null,
+        a.before?.net ?? null,
+        a.after?.net ?? null,
+      ]),
+    },
+    {
+      name: "안내",
+      headers: ["항목", "내용"],
+      rows: [
+        ["범위", "급여 항목과 수정 이력의 조회용 보고서입니다."],
+        [
+          "사진 및 복원",
+          "사진·전체 항목 복원에는 급여 메뉴의 사진 포함 급여 백업을 사용하세요.",
+        ],
+        [
+          "확인 상태",
+          "검토 대기 금액은 원본 확인 전 제안값이며 월별 추이 집계에서 제외합니다.",
+        ],
+      ],
+    },
+  ];
+}

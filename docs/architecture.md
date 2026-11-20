@@ -72,3 +72,9 @@ Node.js 24의 내장 `node:sqlite`를 사용합니다. 정상 자료는 `.data/f
 `/api/storage`는 로컬 상태·전송 시각만 읽습니다. `/api/export/excel`은 ExcelJS로 상태를 보고서로 만듭니다. `/api/transfer/google`의 preview/push에서만 수동 전송하며 로컬 revision과 원격 문서 해시를 검증합니다. 전송 ID 재시도로 같은 Google 쓰기가 중복되지 않게 처리합니다. Google 전송 이력은 금융 자료 revision과 별도 테이블에 기록합니다.
 
 실행 중 DB 파일 하나만 복사하면 WAL의 최신 수정이 빠질 수 있습니다. 평상시 이동·복원용 백업은 앱의 JSON 내보내기를 사용하세요. 파일 자체를 보관하려면 서버를 종료한 뒤 DB와 WAL/SHM을 함께 보관하세요. SQLite는 별도로 암호화하지 않습니다.
+
+## 급여 자료
+
+급여는 같은 SQLite 파일의 `payroll_meta`, `payroll_records`, `payroll_images`, `payroll_audit`에 별도 revision으로 저장합니다. 자산 상태 JSON과 자동으로 합치지 않습니다. 사진은 MIME 서명·크기·SHA-256을 확인한 BLOB이며 앱 API로만 읽고 공개 정적 폴더에는 저장하지 않습니다. 급여 전용 백업에는 전체 기록·이력·사진이 포함됩니다. 원본 사진은 수정 전후 이력에서 참조하는 동안 보존합니다. 삭제/복원/영구삭제 및 파괴적 복원 전 백업을 지원합니다.
+
+`lib/payroll-ocr.ts`는 macOS의 로컬 Swift/Vision 스크립트를 실행하고 제안 필드만 반환합니다. 원본 OCR 텍스트는 임시 디렉터리 안에 두고 종료 시 제거합니다. 앱 자체는 OCR을 위해 외부 서비스나 별도 API 키를 사용하지 않습니다. 급여 표시값은 원본 확인 전까지 draft로 유지하며 자산/지출 계산·DSR 소득에 자동 반영하지 않습니다.

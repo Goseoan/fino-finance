@@ -140,7 +140,7 @@ export function StoragePanel({ revision }: { revision: number }) {
             {preview.counts.audit}개
           </p>
           <p>
-            과거 잔액·분류·설정·휴지통도 포함합니다.{" "}
+            자산·지출·대출의 과거 잔액·분류·설정·휴지통도 포함합니다. 급여명세서와 사진은 급여 메뉴의 별도 백업을 사용하세요.{" "}
             {preview.remoteRevision === null
               ? "새 앱 보관본을 만듭니다."
               : "Google의 기존 앱 보관본을 현재 로컬 자료로 교체합니다. 교체 전 보관본은 이 기기에 백업합니다."}{" "}

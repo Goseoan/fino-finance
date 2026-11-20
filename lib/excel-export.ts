@@ -255,10 +255,16 @@ function scalar(v: unknown): string | number | null {
         : JSON.stringify(v);
 }
 export async function excelBuffer(state: State) {
+  return excelTablesBuffer(exportTables(state), state.updatedAt);
+}
+export async function excelTablesBuffer(
+  tables: ExportTable[],
+  updatedAt = new Date().toISOString(),
+) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "FINO";
-  workbook.created = new Date(state.updatedAt);
-  for (const table of exportTables(state)) {
+  workbook.created = new Date(updatedAt);
+  for (const table of tables) {
     const sheet = workbook.addWorksheet(table.name, {
       views: [{ state: "frozen", ySplit: 1 }],
     });
