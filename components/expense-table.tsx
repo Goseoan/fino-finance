@@ -87,12 +87,12 @@ export function ExpenseTable({
       {
         accessorKey: "category",
         header: "현금흐름 구분",
-        cell: ({ getValue }) => (
+        cell: ({ getValue, row }) => (
           <span
             className="tag expense-category"
             data-category={String(getValue())}
           >
-            {cashflowLabel(String(getValue()))}
+            {cashflowLabel(String(getValue()))} · {expensePurpose(row.original)}
           </span>
         ),
       },
@@ -356,7 +356,7 @@ export function ExpenseTable({
                       className="tag expense-category"
                       data-category={e.category}
                     >
-                      {cashflowLabel(e.category)}
+                      {cashflowLabel(e.category)} · {expensePurpose(e)}
                     </span>
                     <small>
                       {e.cycle} 납부 · {e.active ? "활성" : "중지"}

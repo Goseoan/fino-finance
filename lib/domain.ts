@@ -137,6 +137,12 @@ export const stateSchema = z
         description: z.string(),
         assetId: z.string().optional(),
         itemChange: itemChangeSchema.optional(),
+        classification: z
+          .object({
+            batchId: z.string().min(1),
+            operation: z.enum(["apply", "undo"]),
+          })
+          .optional(),
         beforeValue: amount.nullable().optional(),
         afterValue: amount.optional(),
         effectiveDate: dateSchema.optional(),
@@ -204,27 +210,43 @@ export function payment(
     r === 0 ? principal / months : (principal * r) / (1 - (1 + r) ** -months),
   );
 }
-export function loanMonthly(l: Loan) {
-  return l.method === "원금균등" && l.monthlyPrincipal > 0
-    ? Math.round(l.monthlyPrincipal + (l.principal * l.rate) / 1200)
-    : payment(l.principal, l.rate, l.months ?? 1, l.method);
+export function loanMonthly(l: Loan): number | null {
+  if (!l.active || l.deletedAt || l.principal === 0) return 0;
+  if (l.method === "만기일시") return Math.round((l.principal * l.rate) / 1200);
+  if (l.method === "원금균등" && l.monthlyPrincipal > 0)
+    return Math.round(l.monthlyPrincipal + (l.principal * l.rate) / 1200);
+  if (l.months === null) return null;
+  return payment(l.principal, l.rate, l.months, l.method);
 }
 export function cashflow(s: State) {
-  const active = s.expenses.filter((e) => e.active);
-  const loan = s.loans
-    .filter((l) => l.active)
-    .reduce((t, l) => t + loanMonthly(l), 0);
-  const budget =
+  const active = s.expenses.filter((e) => e.active && !e.deletedAt);
+  const estimates = s.loans
+    .filter((l) => l.active && !l.deletedAt)
+    .map(loanMonthly);
+  const unknownLoans = estimates.filter((n) => n === null).length;
+  const loanKnown = estimates.reduce<number>((sum, n) => sum + (n ?? 0), 0);
+  const sum = (category: Expense["category"]) =>
     active
-      .filter((e) => e.category !== "급여공제" && e.category !== "대출상환")
-      .reduce((t, e) => t + monthlyEquivalent(e.amount, e.cycle), 0) + loan;
+      .filter((e) => e.category === category)
+      .reduce((t, e) => t + monthlyEquivalent(e.amount, e.cycle), 0);
+  const consumption = sum("소비지출"),
+    livingBudget = sum("생활비예산"),
+    savings = sum("저축·투자"),
+    payroll = sum("급여공제"),
+    loanReference = sum("대출상환");
+  const budgetKnown = consumption + livingBudget + savings + loanKnown;
   return {
-    budget,
-    remaining: s.settings.income - budget,
-    loan,
-    consumption: active
-      .filter((e) => e.category === "소비지출")
-      .reduce((t, e) => t + monthlyEquivalent(e.amount, e.cycle), 0),
+    budget: unknownLoans ? null : budgetKnown,
+    budgetKnown,
+    remaining: unknownLoans ? null : s.settings.income - budgetKnown,
+    loan: unknownLoans ? null : loanKnown,
+    loanKnown,
+    unknownLoans,
+    consumption,
+    livingBudget,
+    savings,
+    payroll,
+    loanReference,
   };
 }
 export function totals(s: State) {
@@ -475,8 +497,11 @@ export function scheduledOutflow(s: State, month: string) {
   const target = year * 12 + mon;
   let scheduled = s.loans
       .filter((l) => l.active)
-      .reduce((t, l) => t + loanMonthly(l), 0),
+      .reduce((t, l) => t + (loanMonthly(l) ?? 0), 0),
     unknown = 0;
+  const unknownLoans = s.loans.filter(
+    (l) => l.active && !l.deletedAt && loanMonthly(l) === null,
+  ).length;
   for (const e of s.expenses) {
     if (!e.active || e.category === "급여공제" || e.category === "대출상환")
       continue;
@@ -491,7 +516,7 @@ export function scheduledOutflow(s: State, month: string) {
       if (diff >= 0 && diff % interval === 0) scheduled += e.amount;
     }
   }
-  return { scheduled, unknown };
+  return { scheduled, unknown, unknownLoans };
 }
 export function amortization(l: Loan, limit = 12) {
   if (l.months === null) return [];

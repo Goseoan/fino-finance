@@ -230,13 +230,17 @@ export function Dashboard({
             <strong>{won(state.settings.income)}원</strong>
           </div>
           <div className="cashflow-row">
-            <span>월 환산 배정·지출</span>
-            <strong>{won(cf.budget)}원</strong>
+            <span>
+              {cf.unknownLoans
+                ? "확인된 월 환산 배정·지출"
+                : "월 환산 배정·지출"}
+            </span>
+            <strong>{won(cf.budgetKnown)}원</strong>
           </div>
           <div className="flow-track">
             <i
               style={{
-                width: `${state.settings.income > 0 ? Math.min(100, (cf.budget / state.settings.income) * 100) : 0}%`,
+                width: `${state.settings.income > 0 ? Math.min(100, (cf.budgetKnown / state.settings.income) * 100) : 0}%`,
               }}
             />
           </div>
@@ -244,7 +248,9 @@ export function Dashboard({
             {state.settings.income > 0 ? (
               <>
                 수입의{" "}
-                <b>{((cf.budget / state.settings.income) * 100).toFixed(1)}%</b>
+                <b>
+                  {((cf.budgetKnown / state.settings.income) * 100).toFixed(1)}%
+                </b>
                 를 배정했어요
               </>
             ) : (
@@ -255,11 +261,25 @@ export function Dashboard({
             <span>
               예상 잔여 예산 <Info size={13} />
             </span>
-            <strong className={cf.remaining >= 0 ? "positive" : "negative"}>
-              {won(cf.remaining)}
-              <small>원</small>
+            <strong
+              className={
+                cf.remaining !== null && cf.remaining >= 0
+                  ? "positive"
+                  : "negative"
+              }
+            >
+              {cf.remaining === null
+                ? "대출 정보 확인 필요"
+                : won(cf.remaining)}
+              {cf.remaining !== null && <small>원</small>}
             </strong>
           </div>
+          {cf.unknownLoans > 0 && (
+            <p className="muted">
+              월 상환액 미확인 대출 {cf.unknownLoans}건이 있어 전체 배정액·잔여
+              예산은 계산을 보류합니다.
+            </p>
+          )}
         </Panel>
         <Panel
           title="주요 계좌"

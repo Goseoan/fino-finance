@@ -1,4 +1,5 @@
 "use client";
+import { CASHFLOW_HELP } from "@/lib/expense-classification";
 import { cashflowLabel } from "@/lib/classification";
 import { CASH_TYPES, cashType } from "@/lib/cash-types";
 import { MoneyInput } from "./ui/money-input";
@@ -224,6 +225,9 @@ export function ExpenseForm({
             ))}
           </select>
         </label>
+        <p className="muted" role="note">
+          {CASHFLOW_HELP[watch("category")]}
+        </p>
         <label>
           세부 용도
           <select

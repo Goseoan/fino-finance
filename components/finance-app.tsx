@@ -1,4 +1,5 @@
 "use client";
+import { ExpenseClassificationPanel } from "./expense-classification-panel";
 import { StoragePanel, downloadExcel } from "./storage-panel";
 import {
   ASSET_TYPES,
@@ -435,9 +436,10 @@ export default function FinanceApp() {
   const selectedLoan =
     state.loans.find((l) => l.active && l.id === selectedLoanId) ??
     state.loans.find((l) => l.active);
-  const dsr = state.settings.annualIncome
-    ? ((cf.loan * 12) / state.settings.annualIncome) * 100
-    : null;
+  const dsr =
+    state.settings.annualIncome && cf.loan !== null
+      ? ((cf.loan * 12) / state.settings.annualIncome) * 100
+      : null;
   const validChanges = Object.values(changes).every(
     (v) => v !== "" && Number.isSafeInteger(Number(v)) && Number(v) >= 0,
   );
@@ -1113,9 +1115,13 @@ export default function FinanceApp() {
               <>
                 <div className="stat-row">
                   <div>
-                    <span>월 환산 배정·지출</span>
+                    <span>
+                      {cf.unknownLoans
+                        ? "확인된 월 환산 배정·지출"
+                        : "월 환산 배정·지출"}
+                    </span>
                     <strong>
-                      {won(cf.budget)}
+                      {won(cf.budgetKnown)}
                       <small>원</small>
                     </strong>
                   </div>
@@ -1147,7 +1153,8 @@ export default function FinanceApp() {
                     <b>이번 달 납부일 기준 계획 현금유출</b>
                     <p>
                       월 환산 예산과 별도 계산 · 납부일 미확인{" "}
-                      {scheduled.unknown}건 제외
+                      {scheduled.unknown}건 · 상환액 미확인 대출{" "}
+                      {scheduled.unknownLoans}건 제외
                     </p>
                   </div>
                   <strong>
@@ -1155,6 +1162,11 @@ export default function FinanceApp() {
                     <small>원</small>
                   </strong>
                 </div>
+                <ExpenseClassificationPanel
+                  state={state}
+                  disabled={!!readOnly || busy}
+                  onSaved={load}
+                />
                 <ExpenseTable
                   expenses={state.expenses.filter((e) => !e.deletedAt)}
                   onDelete={(e) => requestDelete("expense", [e.id], e.name)}
@@ -1196,9 +1208,14 @@ export default function FinanceApp() {
                   <div>
                     <span>예상 월 원리금</span>
                     <strong>
-                      {won(cf.loan)}
-                      <small>원</small>
+                      {cf.loan === null ? "정보 확인 필요" : won(cf.loan)}
+                      {cf.loan !== null && <small>원</small>}
                     </strong>
+                    {cf.unknownLoans > 0 && (
+                      <p className="muted">
+                        잔여 기간 등 필수 정보가 없는 대출 {cf.unknownLoans}건
+                      </p>
+                    )}
                   </div>
                   <div>
                     <span>간이 DSR / 40% 한도 사용률</span>
@@ -1292,7 +1309,11 @@ export default function FinanceApp() {
                             </div>
                             <div>
                               <span>예상 월 원리금</span>
-                              <b>{won(loanMonthly(l))}원</b>
+                              <b>
+                                {loanMonthly(l) === null
+                                  ? "잔여 기간 확인 필요"
+                                  : `${won(loanMonthly(l)!)}원`}
+                              </b>
                             </div>
                             <div>
                               <span>만기</span>
@@ -1306,73 +1327,63 @@ export default function FinanceApp() {
                         </Panel>
                       ))}
                   </div>
-                  {selectedLoan &&
-                    (selectedLoan.months !== null ||
-                      selectedLoan.monthlyPrincipal > 0 ||
-                      selectedLoan.method === "만기일시") && (
-                      <Panel
-                        title="금리 시뮬레이션"
-                        subtitle="금리가 달라지면 월 상환액은 어떻게 될까요?"
-                      >
-                        <div className="simulation">
-                          <p>{selectedLoan.name}</p>
-                          <label>
-                            예상 연 금리
-                            <div className="rate-input">
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.1"
-                                aria-label="시뮬레이션 금리"
-                                value={rate}
-                                onChange={(e) => setRate(e.target.value)}
-                              />
-                              <span>%</span>
-                            </div>
-                          </label>
-                          <input
-                            aria-label="금리 조절"
-                            type="range"
-                            min="0"
-                            max="12"
-                            step="0.1"
-                            value={rate}
-                            onChange={(e) => setRate(e.target.value)}
-                          />
-                          <div className="range-labels">
-                            <span>0%</span>
-                            <span>6%</span>
-                            <span>12%</span>
+                  {selectedLoan && loanMonthly(selectedLoan) !== null && (
+                    <Panel
+                      title="금리 시뮬레이션"
+                      subtitle="금리가 달라지면 월 상환액은 어떻게 될까요?"
+                    >
+                      <div className="simulation">
+                        <p>{selectedLoan.name}</p>
+                        <label>
+                          예상 연 금리
+                          <div className="rate-input">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.1"
+                              aria-label="시뮬레이션 금리"
+                              value={rate}
+                              onChange={(e) => setRate(e.target.value)}
+                            />
+                            <span>%</span>
                           </div>
-                          <div className="simulation-result">
-                            <span>예상 월 상환액</span>
-                            <strong data-testid="sim-payment">
-                              {Number(rate) >= 0 && Number(rate) <= 100
-                                ? won(
-                                    selectedLoan.monthlyPrincipal
-                                      ? selectedLoan.monthlyPrincipal +
-                                          (selectedLoan.principal *
-                                            Number(rate)) /
-                                            1200
-                                      : payment(
-                                          selectedLoan.principal,
-                                          Number(rate),
-                                          selectedLoan.months ?? 1,
-                                          selectedLoan.method,
-                                        ),
-                                  )
-                                : "—"}
-                              <small>원</small>
-                            </strong>
-                          </div>
-                          <p className="muted">
-                            현재 잔액·잔여기간 고정 가정의 추정값입니다.
-                            수수료와 금리 변경 조건은 반영하지 않습니다.
-                          </p>
+                        </label>
+                        <input
+                          aria-label="금리 조절"
+                          type="range"
+                          min="0"
+                          max="12"
+                          step="0.1"
+                          value={rate}
+                          onChange={(e) => setRate(e.target.value)}
+                        />
+                        <div className="range-labels">
+                          <span>0%</span>
+                          <span>6%</span>
+                          <span>12%</span>
                         </div>
-                      </Panel>
-                    )}
+                        <div className="simulation-result">
+                          <span>예상 월 상환액</span>
+                          <strong data-testid="sim-payment">
+                            {Number(rate) >= 0 && Number(rate) <= 100
+                              ? won(
+                                  loanMonthly({
+                                    ...selectedLoan,
+                                    rate: Number(rate),
+                                  })!,
+                                )
+                              : "—"}
+                            <small>원</small>
+                          </strong>
+                        </div>
+                        <p className="muted">
+                          현재 잔액·잔여기간 고정 가정의 추정값입니다. 수수료와
+                          금리 변경 조건은 반영하지 않습니다.
+                        </p>
+                      </div>
+                    </Panel>
+                  )}
                 </div>
                 <Panel
                   title="예상 상환 일정"
