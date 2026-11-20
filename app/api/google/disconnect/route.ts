@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { allowedOrigin } from "@/lib/http";
-import { GoogleSheetsRepository } from "@/lib/sheets";
 import { disconnectGoogle } from "@/lib/google-connection";
 export async function POST(req: NextRequest) {
   if (!allowedOrigin(req.headers))
     return NextResponse.json({ error: "허용되지 않은 요청" }, { status: 403 });
   try {
-    await new GoogleSheetsRepository().disconnect();
+    await disconnectGoogle();
     return NextResponse.json({ disconnected: true });
   } catch {
     return NextResponse.json(

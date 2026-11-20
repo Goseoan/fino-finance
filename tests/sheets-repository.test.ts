@@ -10,6 +10,7 @@ function fake(conflict = false) {
   const initial = seedState();
   initial.mode = "sheets";
   let rows = encodeDocument(initial, "initial"),
+    reportRows: (string | number)[][] = [],
     reads = 0,
     writes = 0;
   const getClient = async () => ({
@@ -32,7 +33,9 @@ function fake(conflict = false) {
           }),
         },
         values: {
-          get: async () => {
+          get: async ({ range }: { range?: string } = {}) => {
+            if (range?.includes("F1:R"))
+              return { data: { values: reportRows } };
             reads++;
             if (conflict && reads === 2)
               rows = encodeDocument(
@@ -48,7 +51,7 @@ function fake(conflict = false) {
           requestBody: {
             requests: {
               updateCells?: {
-                range: { sheetId: number };
+                range: { sheetId: number; startColumnIndex?: number };
                 rows: {
                   values: {
                     userEnteredValue: {
@@ -62,8 +65,22 @@ function fake(conflict = false) {
           };
         }) => {
           writes++;
-          assert.equal(requestBody.requests.length, 1);
-          const update = requestBody.requests[0].updateCells!;
+          assert.ok([1, 3].includes(requestBody.requests.length));
+          const report = requestBody.requests.find(
+            (r) => r.updateCells?.range.startColumnIndex === 5,
+          )?.updateCells;
+          if (report)
+            reportRows = report.rows.map((r) =>
+              r.values.map(
+                (c) =>
+                  c.userEnteredValue.numberValue ??
+                  c.userEnteredValue.stringValue ??
+                  "",
+              ),
+            );
+          const update = requestBody.requests.find(
+            (r) => r.updateCells?.range.startColumnIndex !== 5 && r.updateCells,
+          )?.updateCells!;
           assert.equal(update.range.sheetId, 777);
           rows = update.rows.map((r) =>
             r.values.map(
@@ -202,4 +219,36 @@ test("first connection creates writer ownership and app data in one batch", asyn
   );
   await assert.rejects(() => other.initialize(), /소유권/);
   assert.equal(writes, 1);
+});
+
+test("manual Google export previews, sends report and full state atomically, rejects stale preview and deduplicates", async () => {
+  const f = fake(),
+    local = seedState();
+  local.mode = "local";
+  local.revision = 42;
+  local.assets[0].value = 0;
+  const preview = await f.repo.previewExport();
+  assert.equal(f.writes(), 0);
+  await assert.rejects(
+    f.repo.exportLocal(local, "stale", "manual-stale"),
+    /충돌/,
+  );
+  assert.equal(f.writes(), 0);
+  const saved = await f.repo.exportLocal(
+    local,
+    preview.fingerprint,
+    "manual-once",
+  );
+  assert.equal(saved.assets[0].value, 0);
+  assert.equal(saved.revision, 1);
+  assert.equal(f.writes(), 1);
+  const again = await f.repo.exportLocal(
+    local,
+    preview.fingerprint,
+    "manual-once",
+  );
+  assert.equal(again.revision, 1);
+  assert.equal(f.writes(), 1);
+  assert.equal(local.revision, 42);
+  assert.equal(local.mode, "local");
 });

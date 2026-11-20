@@ -227,14 +227,14 @@ for (const width of [1440, 390])
     await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
     await page.goto("/connect");
     await expect(
-      page.getByRole("heading", { name: "실제 Google Sheets 연결" }),
+      page.getByRole("heading", { name: "Google Sheets 수동 전송 인증" }),
     ).toBeVisible();
     await expect(page.getByLabel("Google 클라이언트 시크릿")).toHaveAttribute(
       "type",
       "password",
     );
     await expect(page.getByLabel("Google 클라이언트 시크릿")).toHaveValue("");
-    await expect(page.getByLabel("최초 연결 데이터")).toBeVisible();
+    await expect(page.getByText(/인증해도 기본 저장소는 SQLite/)).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

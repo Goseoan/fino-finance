@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Link2, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { Link2, AlertCircle } from "lucide-react";
 import { Button } from "./ui/button";
 type Status = {
   configured: boolean;
@@ -19,14 +19,10 @@ export function GoogleConnectionPanel({
   const [status, setStatus] = useState<Status | null>(null);
   const [clientId, setClientId] = useState(""),
     [secret, setSecret] = useState(""),
-    [spreadsheetId, setSpreadsheetId] = useState(
-      "",
-    ),
+    [spreadsheetId, setSpreadsheetId] = useState(""),
     [redirect, setRedirect] = useState(""),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState(""),
-    [approved, setApproved] = useState(false),
-    [source, setSource] = useState("google");
+    [message, setMessage] = useState("");
   async function load() {
     try {
       const r = await fetch("/api/google/config");
@@ -46,7 +42,7 @@ export function GoogleConnectionPanel({
     if (result)
       setMessage(
         result === "success"
-          ? "Google 인증이 완료됐습니다. 아래에서 저장 범위를 확인하고 연결을 활성화하세요."
+          ? "Google 인증이 완료됐습니다. 저장 및 내보내기에서 필요할 때 전송하세요."
           : result === "failed"
             ? "인증이 취소되었거나 검증하지 못했습니다. 다시 로그인해 주세요."
             : "먼저 OAuth 클라이언트 설정을 저장해 주세요.",
@@ -78,43 +74,23 @@ export function GoogleConnectionPanel({
       setBusy(false);
     }
   }
-  async function connect() {
-    setBusy(true);
-    setMessage("");
-    try {
-      const r = await fetch("/api/google/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved, source }),
-      });
-      const b = await r.json();
-      if (!r.ok) throw Error(b.error);
-      setMessage("실제 Google Sheets 연결과 저장 후 검증이 완료됐습니다.");
-      await load();
-      onConnected?.();
-    } catch (e) {
-      setMessage((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   const locked = busy || !!status?.enabled;
   return (
     <section className="google-connection">
       <div className="connection-heading">
         <Link2 size={22} />
         <div>
-          <h2>실제 Google Sheets 연결</h2>
+          <h2>Google Sheets 수동 전송 인증</h2>
           <p>
             {status?.enabled
-              ? "Google에 읽기·쓰기 연결됨"
+              ? "인증 정보 저장됨 · 자동 전송 없음"
               : status?.authorized
-                ? "인증 완료 · 저장소 활성화 대기"
+                ? "인증 완료 · 수동 전송 가능"
                 : "앱 전용 OAuth 인증이 필요합니다"}
           </p>
         </div>
-        <span className={`tag ${status?.enabled ? "teal" : "amber"}`}>
-          {status?.enabled ? "연결됨" : "미연결"}
+        <span className={`tag ${status?.authorized ? "teal" : "amber"}`}>
+          {status?.authorized ? "인증됨" : "인증 필요"}
         </span>
       </div>
       <div className="google-setup-note">
@@ -191,57 +167,10 @@ export function GoogleConnectionPanel({
           )}
         </div>
       </form>
-      <div className="google-scope">
-        <h3>저장 범위 확인</h3>
-        <p>
-          동시 수정으로 데이터가 덮이지 않도록 이 앱 설치 하나에만 쓰기를
-          허용합니다. 연결 시 앱 전용 탭에 쓰기 소유자 표식도 등록합니다.
-        </p>
-        <label className="connection-source">
-          최초 연결 시 데이터
-          <select
-            aria-label="최초 연결 데이터"
-            value={source}
-            disabled={locked}
-            onChange={(e) => setSource(e.target.value)}
-          >
-            <option value="google">Google 기존 자료 사용 (기본)</option>
-            <option value="local">
-              이 기기의 실제 작업본 업로드 (새 앱 저장소만)
-            </option>
-          </select>
-        </label>
-        <p>
-          개선본의 <b>08_앱데이터!A1:D5000</b>에만 앱 상태를 기록합니다. 기존
-          관리·날짜 탭과 원본 시트는 변경하지 않습니다. 저장 전 이 기기에 JSON
-          백업을 만들고 저장 후 다시 읽어 검증합니다.
-        </p>
-        <p>
-          Google 기존 자료를 선택하면 기존 앱 기록을 사용하거나 관리 탭을 읽어
-          초기화합니다. 로컬 작업본 업로드는 새 앱 저장소에만 허용합니다. 연결
-          전 로컬 변경도 별도로 백업합니다.
-        </p>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={approved}
-            disabled={locked}
-            onChange={(e) => setApproved(e.target.checked)}
-          />
-          위 저장 범위를 확인했습니다
-        </label>
-        <Button
-          disabled={!status?.authorized || !approved || locked}
-          onClick={connect}
-        >
-          {busy ? (
-            <RefreshCw size={15} className="spin" />
-          ) : (
-            <CheckCircle2 size={15} />
-          )}
-          실제 저장소 연결
-        </Button>
-      </div>
+      <p className="muted">
+        인증해도 기본 저장소는 SQLite입니다. Google 전송은 설정의 저장 및
+        내보내기에서 직접 실행합니다.
+      </p>
       {message && (
         <p className="connection-result" role="status">
           <AlertCircle size={16} />
@@ -259,7 +188,7 @@ export function GoogleConnectionPanel({
             onClick={async () => {
               if (
                 !confirm(
-                  "Google 연결을 해제할까요? 구글 데이터는 삭제하지 않으며 마지막 확인 자료를 기기에 보관합니다.",
+                  "Google 연결을 해제할까요? 로컬 DB와 구글 데이터는 그대로 유지됩니다.",
                 )
               )
                 return;

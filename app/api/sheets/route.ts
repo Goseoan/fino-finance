@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { googleClient } from "@/lib/google-connection";
 import { GoogleSheetsRepository } from "@/lib/sheets";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
-    const repo = new GoogleSheetsRepository();
+    const repo = new GoogleSheetsRepository(googleClient, async () => {});
     if (req.nextUrl.searchParams.get("view") === "data")
       return NextResponse.json(await repo.read(), {
         headers: { "Cache-Control": "no-store" },

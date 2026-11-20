@@ -12,7 +12,7 @@ export async function GET() {
       clientId: c?.clientId ?? "",
       spreadsheetId: c?.spreadsheetId ?? "",
       redirectUri: c?.redirectUri ?? "",
-      writeRange: "08_앱데이터!A1:D5000",
+      writeRange: "08_앱데이터!A1:D5000, F1:R5000 (수동 전송만)",
     },
     { headers: { "Cache-Control": "no-store" } },
   );

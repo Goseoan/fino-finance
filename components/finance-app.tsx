@@ -1,4 +1,5 @@
 "use client";
+import { StoragePanel, downloadExcel } from "./storage-panel";
 import {
   ASSET_TYPES,
   orderedLabels,
@@ -425,7 +426,7 @@ export default function FinanceApp() {
     state.mode === "sheets"
       ? "Google 연동"
       : state.mode === "local"
-        ? "실제 자료 · 미연결"
+        ? "로컬 DB · SQLite"
         : state.mode === "imported"
           ? "시트 보관본"
           : "데모 모드";
@@ -618,9 +619,19 @@ export default function FinanceApp() {
               <div className="heading-actions">
                 {section === "대시보드" ? (
                   <>
-                    <Button variant="outline" onClick={exportData}>
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await downloadExcel();
+                          setToast("엑셀 파일을 내려받았습니다.");
+                        } catch (e) {
+                          setError((e as Error).message);
+                        }
+                      }}
+                    >
                       <Download size={16} />
-                      <span>내보내기</span>
+                      <span>엑셀 내보내기</span>
                     </Button>
                     <Button
                       onClick={() => navigate("오늘의 자산 등록")}
@@ -673,21 +684,21 @@ export default function FinanceApp() {
                         ? "데모 데이터로 둘러보고 있어요."
                         : state.mode === "sheets"
                           ? "실제 Google Sheets에 연결되어 있습니다."
-                          : "실제 자료의 로컬 작업본 · Google 미연결"}
+                          : "로컬 DB에 안전하게 기록하고 있어요."}
                     </b>
                     <span className="banner-detail">
                       {" "}
                       {state.mode === "sheets"
                         ? "변경사항은 앱 전용 탭에 저장 후 검증합니다."
                         : state.mode === "local"
-                          ? "변경사항은 이 기기에만 저장됩니다. Google 연결을 완료해 주세요."
+                          ? "변경사항은 SQLite에 저장됩니다. Google 전송은 직접 실행할 때만 진행합니다."
                           : "입력한 내용은 이 기기의 로컬 서버에 저장됩니다."}
                     </span>
                   </>
                 )}
               </span>
               <button onClick={() => navigate("설정")}>
-                {readOnly ? "연결 확인" : "데이터 연결"}
+                {readOnly ? "연결 확인" : "내보내기·연동"}
                 <ArrowRight size={13} />
               </button>
             </div>
@@ -1409,7 +1420,7 @@ export default function FinanceApp() {
             {section === "이력 및 통계" && (
               <>
                 <HistoryImport
-                  enabled={state.mode === "sheets"}
+                  enabled={state.mode === "local" || state.mode === "sheets"}
                   onImported={async () => {
                     await load();
                     setToast("과거 자산 상세 기록을 반영했습니다.");
@@ -1632,6 +1643,7 @@ export default function FinanceApp() {
                     </form>
                   </div>
                 </Panel>
+                <StoragePanel revision={state.revision} />
                 <GoogleConnectionPanel onConnected={load} />
                 <TrashPanel
                   state={state}

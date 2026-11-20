@@ -22,6 +22,11 @@ if ! command -v node >/dev/null || [[ ! -f node_modules/next/dist/bin/next ]]; t
   read '?Enter 키를 누르면 닫습니다. '
   exit 1
 fi
+if ! node -e 'if(Number(process.versions.node.split(".")[0])<24)process.exit(1)' ; then
+  print 'SQLite 저장에는 Node.js 24 이상이 필요합니다. Node.js를 업데이트해 주세요.'
+  read '?Enter 키를 누르면 닫습니다. '
+  exit 1
+fi
 print 'FINO 서버를 시작합니다. 종료하려면 이 창에서 Control+C를 누르세요.'
 (
   for attempt in {1..120}; do

@@ -1,3 +1,4 @@
+import { SQLiteRepository } from "./sqlite-repository";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { State, stateSchema, seedState } from "./domain";
@@ -43,28 +44,15 @@ export class FileRepository implements Repository {
   }
 }
 const globalRepo = globalThis as unknown as {
-  financeDemo?: FileRepository;
-  financeLocal?: FileRepository;
+  financeSQLite?: SQLiteRepository;
+  financeSQLiteDemo?: SQLiteRepository;
 };
-export const demoRepository = (globalRepo.financeDemo ??= new FileRepository());
-export const localRepository = (globalRepo.financeLocal ??= new FileRepository(
-  path.join(process.cwd(), ".data", "actual.json"),
-  async () => {
-    try {
-      const source = JSON.parse(
-        await readFile(
-          path.join(process.cwd(), ".data", "source.json"),
-          "utf8",
-        ),
-      );
-      return { ...migrateSource(source), mode: "local" as const };
-    } catch {
-      throw Error(
-        "실제 자료를 불러올 수 없습니다. /connect에서 Google을 연결하세요.",
-      );
-    }
-  },
-));
+export const demoRepository = (globalRepo.financeSQLiteDemo ??=
+  new SQLiteRepository(path.join(process.cwd(), ".data", "e2e.sqlite"), () =>
+    seedState(),
+  ));
+export const localRepository = (globalRepo.financeSQLite ??=
+  new SQLiteRepository(path.join(process.cwd(), ".data", "finance.sqlite")));
 export const repository = process.env.FINANCE_E2E
   ? demoRepository
   : localRepository;

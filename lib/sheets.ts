@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { exportTables, type ExportTable } from "./excel-export";
 import { parseHistoricalAssets } from "./historical-assets";
 import {
   googleClient,
@@ -160,11 +162,69 @@ export class GoogleSheetsRepository {
     requestId: string,
     sheetId: number | null,
     claim = false,
+    reports?: ExportTable[],
   ) {
     const { sheets, config } = await this.getClient();
     assertWriteTarget(config.spreadsheetId, APP_SHEET);
     const target = sheetId ?? Math.floor(Math.random() * 1_000_000_000) + 1;
     const rows = encodeDocument({ ...state, mode: "sheets" }, requestId);
+    const readable =
+      reports?.flatMap((table) => [
+        [table.name],
+        table.headers,
+        ...table.rows,
+        [],
+      ]) ?? [];
+    if (readable.length > 5000)
+      throw Error(
+        "Google 조회용 표가 5,000행을 초과했습니다. 엑셀 내보내기를 사용하세요.",
+      );
+    const properties = reports
+      ? (await this.metadata()).sheets?.find(
+          (s) => s.properties?.sheetId === target,
+        )?.properties
+      : undefined;
+    const reportRequests = reports
+      ? [
+          {
+            updateSheetProperties: {
+              properties: {
+                sheetId: target,
+                gridProperties: {
+                  columnCount: Math.max(
+                    18,
+                    properties?.gridProperties?.columnCount ?? 4,
+                  ),
+                },
+              },
+              fields: "gridProperties.columnCount",
+            },
+          },
+          {
+            updateCells: {
+              range: {
+                sheetId: target,
+                startRowIndex: 0,
+                endRowIndex: 5000,
+                startColumnIndex: 5,
+                endColumnIndex: 18,
+              },
+              rows: readable.map((row) => ({
+                values: row.map((v) => ({
+                  userEnteredValue:
+                    v == null
+                      ? {}
+                      : typeof v === "number"
+                        ? { numberValue: v }
+                        : { stringValue: v },
+                })),
+              })),
+              fields: "userEnteredValue",
+            },
+          },
+        ]
+      : [];
+
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: config.spreadsheetId,
       requestBody: {
@@ -217,9 +277,29 @@ export class GoogleSheetsRepository {
               fields: "userEnteredValue",
             },
           },
+          ...reportRequests,
         ],
       },
     });
+    if (reports) {
+      const result = await sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: `'${APP_SHEET}'!F1:R5000`,
+        valueRenderOption: "UNFORMATTED_VALUE",
+      });
+      const actual = result.data.values ?? [];
+      const normalize = (rows: unknown[][]) => {
+        const clean = rows.map((row) => {
+          const r = row.map((v) => v ?? "");
+          while (r.length && r.at(-1) === "") r.pop();
+          return r;
+        });
+        while (clean.length && !clean.at(-1)!.length) clean.pop();
+        return JSON.stringify(clean);
+      };
+      if (normalize(actual) !== normalize(readable))
+        throw Error("Google 조회용 표 검증 실패");
+    }
     const verified = await this.document();
     if (
       verified.doc?.requestId !== requestId ||
@@ -307,6 +387,53 @@ export class GoogleSheetsRepository {
       await this.activate();
       await this.cache(state);
       return state;
+    });
+  }
+  /** Explicit manual export only. Never selected by ordinary state reads/writes. */
+  async previewExport() {
+    const { doc, owner, sheetId } = await this.document();
+    if (owner) await this.assertOwner(owner, sheetId);
+    if (doc && !owner) throw Error("쓰기 소유권을 확인할 수 없습니다");
+    return {
+      fingerprint: doc
+        ? createHash("sha256").update(JSON.stringify(doc)).digest("hex")
+        : null,
+      remoteRevision: doc?.state.revision ?? null,
+    };
+  }
+  async exportLocal(local: State, expected: string | null, requestId: string) {
+    return this.execute(async () => {
+      const initial = await this.document();
+      if (initial.owner) await this.assertOwner(initial.owner, initial.sheetId);
+      if (initial.doc && !initial.owner)
+        throw Error("쓰기 소유권을 확인할 수 없습니다");
+      if (initial.doc?.requestId === requestId) return initial.doc.state;
+      const fingerprint = initial.doc
+        ? createHash("sha256").update(JSON.stringify(initial.doc)).digest("hex")
+        : null;
+      if (fingerprint !== expected)
+        throw Error("Google 저장 충돌: 미리보기를 다시 확인하세요");
+      if (initial.doc)
+        await backupState(initial.doc.state, "before-manual-google-export");
+      const next = stateSchema.parse({
+        ...local,
+        mode: "sheets",
+        revision: (initial.doc?.state.revision ?? -1) + 1,
+        lastRequestId: requestId,
+      });
+      const check = await this.document();
+      const current = check.doc
+        ? createHash("sha256").update(JSON.stringify(check.doc)).digest("hex")
+        : null;
+      if (current !== fingerprint || check.sheetId !== initial.sheetId)
+        throw Error("Google 저장 충돌: 미리보기를 다시 확인하세요");
+      return this.write(
+        next,
+        requestId,
+        initial.sheetId,
+        !initial.owner,
+        exportTables(local),
+      );
     });
   }
   async disconnect() {

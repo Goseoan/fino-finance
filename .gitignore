@@ -8,6 +8,11 @@ test-results/
 *.tsbuildinfo
 .next-e2e/
 
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
 .DS_Store
 *.log
 *.pem
