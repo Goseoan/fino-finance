@@ -87,6 +87,31 @@ export function payrollExportTables(s: PayrollState): ExportTable[] {
       ]),
     },
     {
+      name: "연간·퇴직 참고자료",
+      headers: [
+        "명세서 ID",
+        "자료 종류",
+        "기준 연도",
+        "기준일",
+        "항목",
+        "값",
+        "단위",
+      ],
+      rows: s.records
+        .filter((p) => p.kind === "연간소득" || p.kind === "퇴직금")
+        .flatMap((p) =>
+          (p.referenceValues ?? []).map((r) => [
+            p.id,
+            p.kind,
+            p.referenceYear ?? null,
+            p.referenceDate ?? null,
+            r.label,
+            r.amount,
+            r.unit ?? "원",
+          ]),
+        ),
+    },
+    {
       name: "안내",
       headers: ["항목", "내용"],
       rows: [

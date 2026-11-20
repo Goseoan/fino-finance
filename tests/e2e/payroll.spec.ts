@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { blankPayslip } from "../../lib/payroll";
 import ExcelJS from "exceljs";
 const origin = "http://127.0.0.1:3100";
 const empty = {
@@ -114,18 +115,16 @@ test("mobile payslip draft leaves unknown amounts blank and OCR suggestions requ
       },
     }),
   );
+  await page.getByLabel("명세서 사진", { exact: true }).setInputFiles({
+    name: "synthetic.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBz0AAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
   await page
-    .getByLabel("명세서 사진", { exact: true })
-    .setInputFiles({
-      name: "synthetic.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBz0AAAAASUVORK5CYII=",
-        "base64",
-      ),
-    });
-  await page
-    .getByRole("button", { name: "사진에서 값 읽기 · 로컬", exact: true })
+    .getByRole("button", { name: "사진에서 지급·공제 내역 분석", exact: true })
     .click();
   await expect(page.getByLabel("급여 지급액 합계")).toHaveValue("1,200");
   await expect(page.getByLabel("급여 실수령액", { exact: true })).toHaveValue(
@@ -148,6 +147,79 @@ test("mobile payslip draft leaves unknown amounts blank and OCR suggestions requ
   ).toBe(true);
   await page.screenshot({
     path: "test-results/payroll-mobile.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+});
+
+test("structured payroll entries compare by month and annual references stay outside monthly totals", async ({
+  page,
+  request,
+}) => {
+  let state = await (await request.get("/api/payroll")).json();
+  const make = (period: string, value: number) => ({
+    ...blankPayslip(),
+    period,
+    gross: value,
+    deducted: 100,
+    net: value - 100,
+    status: "confirmed" as const,
+    earnings: [
+      { id: crypto.randomUUID(), label: "본봉", amount: value, group: "보수" },
+    ],
+    deductions: [
+      {
+        id: crypto.randomUUID(),
+        label: "보험료",
+        amount: 100,
+        group: "사회보험",
+      },
+    ],
+  });
+  const annual = {
+    ...blankPayslip(),
+    kind: "연간소득",
+    referenceYear: 2025,
+    referenceValues: [{ id: "annual", label: "연간 급여", amount: 99999 }],
+    status: "confirmed",
+  };
+  for (const p of [make("2026-01", 1000), make("2026-03", 2000), annual]) {
+    const body = new FormData();
+    body.set("action", "save");
+    body.set("record", JSON.stringify(p));
+    body.set("revision", String(state.revision));
+    const r = await request.post("/api/payroll", {
+      headers: { Origin: origin },
+      multipart: {
+        action: "save",
+        record: JSON.stringify(p),
+        revision: String(state.revision),
+      },
+    });
+    expect(r.ok()).toBe(true);
+    state = await r.json();
+  }
+  await page.goto("/");
+  await page.getByRole("button", { name: "급여명세서", exact: true }).click();
+  const table = page.getByRole("region", { name: "지급 공제 항목 비교" });
+  await expect(table.getByRole("rowheader", { name: /본봉/ })).toBeVisible();
+  await expect(
+    table.getByRole("cell", { name: "+1,000원", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("참고자료 · 월급 합계와 추이에서 제외"),
+  ).toBeVisible();
+  await expect(page.locator(".stat-row")).toContainText("분석 완료 월급");
+  await expect(page.locator(".stat-row")).toContainText("2,800");
+  await expect(page.locator(".stat-row")).not.toContainText("99,999");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/payroll-structured-mobile.png",
     fullPage: true,
     animations: "disabled",
   });

@@ -24,9 +24,12 @@ import {
   blankPayslip,
   payrollSchema,
   payrollMonthly,
+  isPayrollReference,
+  payrollAnalysisSummary,
 } from "@/lib/payroll";
 import { won, compact } from "@/lib/domain";
 import { Button } from "./ui/button";
+import { PayrollComparison } from "./payroll-comparison";
 import { Modal } from "./ui/modal";
 const money = (n: number | null) => (n === null ? "미확인" : `${won(n)}원`);
 function SignedMoney({
@@ -143,7 +146,15 @@ export function PayrollManager({ readOnly = false }: { readOnly?: boolean }) {
   const active = state.records.filter((r) => !r.deletedAt),
     years = [
       ...new Set(
-        active.flatMap((r) => (r.period ? [r.period.slice(0, 4)] : [])),
+        active.flatMap((r) =>
+          r.period
+            ? [r.period.slice(0, 4)]
+            : r.referenceYear
+              ? [String(r.referenceYear)]
+              : r.referenceDate
+                ? [r.referenceDate.slice(0, 4)]
+                : [],
+        ),
       ),
     ]
       .sort()
@@ -154,14 +165,24 @@ export function PayrollManager({ readOnly = false }: { readOnly?: boolean }) {
         (filter === "trash" ? !!r.deletedAt : !r.deletedAt) &&
         (filter !== "draft" || r.status === "draft") &&
         (filter !== "confirmed" || r.status === "confirmed") &&
-        (year === "all" || r.period?.startsWith(year)) &&
+        (year === "all" ||
+          r.period?.startsWith(year) ||
+          String(r.referenceYear ?? "") === year ||
+          r.referenceDate?.startsWith(year)) &&
         `${r.title} ${r.employer} ${r.period ?? ""}`
           .toLocaleLowerCase("ko-KR")
           .includes(query.toLocaleLowerCase("ko-KR")),
     )
     .sort(
       (a, b) =>
-        (b.period ?? "9999").localeCompare(a.period ?? "9999") ||
+        Number(isPayrollReference(a)) - Number(isPayrollReference(b)) ||
+        (
+          b.period ??
+          b.referenceDate ??
+          String(b.referenceYear ?? "9999")
+        ).localeCompare(
+          a.period ?? a.referenceDate ?? String(a.referenceYear ?? "9999"),
+        ) ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
   const points = payrollMonthly(
@@ -172,10 +193,10 @@ export function PayrollManager({ readOnly = false }: { readOnly?: boolean }) {
       <section className="panel payroll-intro">
         <div>
           <span className="tag teal">이 기기에 보관</span>
-          <h2>매달의 급여, 원본부터 차곡차곡</h2>
+          <h2>지급·공제 내역을 한눈에</h2>
           <p>
-            사진과 지급·공제 항목을 함께 관리하세요. 사진에서 읽은 값은 직접
-            확인한 뒤 확정합니다.
+            분석된 지급·공제 내역과 시점별 변화를 관리합니다. 원본 사진은 근거
+            자료로 연결됩니다.
           </p>
         </div>
         <Button disabled={readOnly} onClick={() => setEditor(blankPayslip())}>
@@ -185,9 +206,13 @@ export function PayrollManager({ readOnly = false }: { readOnly?: boolean }) {
       </section>
       <div className="stat-row">
         <div>
-          <span>확인 완료</span>
+          <span>분석 완료 월급</span>
           <strong>
-            {active.filter((r) => r.status === "confirmed").length}
+            {
+              active.filter(
+                (r) => r.status === "confirmed" && !isPayrollReference(r),
+              ).length
+            }
             <small>건</small>
           </strong>
         </div>
@@ -260,6 +285,11 @@ export function PayrollManager({ readOnly = false }: { readOnly?: boolean }) {
           </div>
         )}
       </section>
+      <PayrollComparison
+        records={active.filter(
+          (r) => year === "all" || r.period?.startsWith(year),
+        )}
+      />
       <div className="payroll-toolbar">
         <input
           aria-label="급여명세서 검색"
@@ -308,32 +338,57 @@ export function PayrollManager({ readOnly = false }: { readOnly?: boolean }) {
               disabled={!!p.deletedAt}
               onClick={() => setEditor(p)}
             >
-              {p.imageIds[0] ? (
-                <img
-                  src={`/api/payroll/images/${p.imageIds[0]}`}
-                  alt={`${p.title} 원본 사진`}
-                  loading="lazy"
-                />
-              ) : (
-                <span className="payroll-no-photo">
-                  <FileImage size={32} />
-                  사진 미등록
-                </span>
-              )}
-              <h3>{p.period ?? "귀속월 확인 필요"}</h3>
+              <span className="payroll-evidence">
+                <FileImage size={15} />
+                원본 근거 {p.imageIds.length}장
+              </span>
+              <h3>
+                {isPayrollReference(p)
+                  ? (p.referenceDate ??
+                    (p.referenceYear ? `${p.referenceYear}년` : "기준 미확인"))
+                  : (p.period ?? "귀속월 확인 필요")}
+              </h3>
               <p>{p.title}</p>
             </button>
-            <div className="payroll-facts">
-              <span>
-                지급액<b>{money(p.gross)}</b>
-              </span>
-              <span>
-                공제액<b>{money(p.deducted)}</b>
-              </span>
-              <span>
-                실수령액<b>{money(p.net)}</b>
-              </span>
-            </div>
+            {isPayrollReference(p) ? (
+              <div className="payroll-facts">
+                {p.referenceValues?.map((r) => (
+                  <span key={r.id}>
+                    {r.label}
+                    <b>
+                      {r.amount === null
+                        ? "미확인"
+                        : new Intl.NumberFormat("ko-KR", {
+                            maximumFractionDigits: 4,
+                          }).format(r.amount) + (r.unit ?? "원")}
+                    </b>
+                  </span>
+                ))}
+                <p className="muted">참고자료 · 월급 합계와 추이에서 제외</p>
+              </div>
+            ) : (
+              <>
+                <div className="payroll-facts">
+                  <span>
+                    지급액<b>{money(p.gross)}</b>
+                  </span>
+                  <span>
+                    공제액<b>{money(p.deducted)}</b>
+                  </span>
+                  <span>
+                    실수령액<b>{money(p.net)}</b>
+                  </span>
+                </div>
+                <p className="payroll-reconciled">
+                  지급 {p.earnings.length}개 · 공제 {p.deductions.length}개
+                  {payrollAnalysisSummary(p).earningsMatch &&
+                  payrollAnalysisSummary(p).deductionsMatch &&
+                  payrollAnalysisSummary(p).netMatches
+                    ? " · 세부 합계 일치"
+                    : " · 내역 검토 대기"}
+                </p>
+              </>
+            )}
             <div className="payroll-actions">
               {p.deletedAt ? (
                 <>
@@ -530,17 +585,41 @@ function PayrollEditor({
       const r = await fetch("/api/payroll/ocr", { method: "POST", body: form }),
         b = await r.json();
       if (!r.ok) throw Error(b.error);
-      setP((old) => ({
-        ...old,
-        ...Object.fromEntries(
-          Object.entries(b.suggestions).filter(([, v]) => v !== null),
-        ),
-        status: "draft",
-      }));
+      setP((old) => {
+        const next = {
+          ...old,
+          ...Object.fromEntries(
+            ["period", "paymentDate", "kind", "gross", "deducted", "net"]
+              .filter((k) => b.suggestions[k] != null)
+              .map((k) => [k, b.suggestions[k]]),
+          ),
+          status: "draft" as const,
+        };
+        for (const k of ["earnings", "deductions"] as const)
+          if (b.suggestions[k]?.length) next[k] = b.suggestions[k];
+        if (isPayrollReference(next)) {
+          next.period = null;
+          next.gross = null;
+          next.deducted = null;
+          next.net = null;
+          next.earnings = [];
+          next.deductions = [];
+        }
+        return next;
+      });
+      const items =
+        (b.suggestions.earnings?.length ?? 0) +
+        (b.suggestions.deductions?.length ?? 0);
       setError(
-        Object.values(b.suggestions).some((v) => v !== null)
-          ? "사진에서 읽은 제안값입니다. 원본과 대조한 뒤 확인 완료로 저장하세요."
-          : "명확하게 읽힌 항목이 없습니다. 원본 사진을 보며 귀속월과 금액을 직접 입력하세요.",
+        b.suggestions.documentType === "reference"
+          ? "연간소득/퇴직금 참고자료로 분류했습니다. 월급 합계에 넣지 않고 참고 항목을 관리합니다."
+          : items
+            ? `지급 ${b.suggestions.earnings.length}개·공제 ${b.suggestions.deductions.length}개 항목을 분석했습니다. 원본 총계와 대조한 뒤 확인 완료로 저장하세요.`
+            : ["period", "gross", "deducted", "net"].some(
+                  (k) => b.suggestions[k] != null,
+                )
+              ? "사진에서 읽은 제안값입니다. 원본과 대조한 뒤 확인 완료로 저장하세요."
+              : "명확하게 읽힌 항목이 없습니다. 원본 사진을 보며 귀속월과 금액을 직접 입력하세요.",
       );
     } catch (e) {
       setError((e as Error).message);
@@ -577,84 +656,90 @@ function PayrollEditor({
     <Modal title="급여명세서 상세·수정" onClose={() => !busy && onClose()}>
       <form className="form payroll-form" onSubmit={save}>
         <fieldset disabled={busy || readOnly}>
-          <div className="payroll-photos">
-            {p.imageIds.map((id) => (
-              <div key={id}>
-                <a
-                  href={`/api/payroll/images/${id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <img
-                    src={`/api/payroll/images/${id}`}
-                    alt="등록한 명세서 원본"
-                  />
-                </a>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() =>
-                    edit(
-                      "imageIds",
-                      p.imageIds.filter((v) => v !== id),
-                    )
-                  }
-                >
-                  이 사진 제외
-                </Button>
-              </div>
-            ))}
-            {previews.map((url, i) => (
-              <div key={url}>
-                <img src={url} alt={`추가할 명세서 사진 ${i + 1}`} />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setFiles((f) => f.filter((_, n) => n !== i))}
-                >
-                  선택 취소
-                </Button>
-              </div>
-            ))}
-          </div>
-          <label>
-            명세서 사진 (JPG·PNG·WebP / 각 10MB 이하)
-            <input
-              aria-label="명세서 사진"
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              onChange={(e) => {
-                const list = [...(e.target.files ?? [])];
-                e.target.value = "";
-                if (
-                  list.some((f) => f.size > 10 * 1024 * 1024) ||
-                  [...files, ...list].reduce((sum, f) => sum + f.size, 0) >
-                    30 * 1024 * 1024 ||
-                  p.imageIds.length + files.length + list.length > 6
-                ) {
-                  setError(
-                    "사진은 각 10MB 이하, 한 번에 합계 30MB 이하, 명세서당 6개까지 등록할 수 있습니다.",
-                  );
-                  return;
-                }
-                setFiles((old) => [...old, ...list]);
-              }}
-            />
-          </label>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!files.length && !p.imageIds.length}
-            onClick={ocr}
+          <details
+            className="payroll-source-details"
+            open={!record.imageIds.length}
           >
-            사진에서 값 읽기 · 로컬
-          </Button>
-          <p className="muted">
-            macOS의 기기 내 문자 인식으로 제안합니다. 원본 사진을 외부 OCR
-            서비스에 보내지 않습니다. 자동 읽기를 지원하지 않는 기기에서는 직접
-            입력할 수 있습니다.
-          </p>
+            <summary>원본 사진 및 자동 분석</summary>
+            <div className="payroll-photos">
+              {p.imageIds.map((id) => (
+                <div key={id}>
+                  <a
+                    href={`/api/payroll/images/${id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <img
+                      src={`/api/payroll/images/${id}`}
+                      alt="등록한 명세서 원본"
+                    />
+                  </a>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() =>
+                      edit(
+                        "imageIds",
+                        p.imageIds.filter((v) => v !== id),
+                      )
+                    }
+                  >
+                    이 사진 제외
+                  </Button>
+                </div>
+              ))}
+              {previews.map((url, i) => (
+                <div key={url}>
+                  <img src={url} alt={`추가할 명세서 사진 ${i + 1}`} />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setFiles((f) => f.filter((_, n) => n !== i))}
+                  >
+                    선택 취소
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <label>
+              명세서 사진 (JPG·PNG·WebP / 각 10MB 이하)
+              <input
+                aria-label="명세서 사진"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={(e) => {
+                  const list = [...(e.target.files ?? [])];
+                  e.target.value = "";
+                  if (
+                    list.some((f) => f.size > 10 * 1024 * 1024) ||
+                    [...files, ...list].reduce((sum, f) => sum + f.size, 0) >
+                      30 * 1024 * 1024 ||
+                    p.imageIds.length + files.length + list.length > 6
+                  ) {
+                    setError(
+                      "사진은 각 10MB 이하, 한 번에 합계 30MB 이하, 명세서당 6개까지 등록할 수 있습니다.",
+                    );
+                    return;
+                  }
+                  setFiles((old) => [...old, ...list]);
+                }}
+              />
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!files.length && !p.imageIds.length}
+              onClick={ocr}
+            >
+              사진에서 지급·공제 내역 분석
+            </Button>
+            <p className="muted">
+              macOS의 기기 내 문자 인식으로 제안합니다. 원본 사진을 외부 OCR
+              서비스에 보내지 않습니다. 자동 읽기를 지원하지 않는 기기에서는
+              직접 입력할 수 있습니다.
+            </p>
+          </details>
           <label>
             명세서 이름
             <input
@@ -669,6 +754,7 @@ function PayrollEditor({
             <label>
               귀속월
               <input
+                disabled={isPayrollReference(p)}
                 aria-label="급여 귀속월"
                 type="month"
                 value={p.period ?? ""}
@@ -692,12 +778,29 @@ function PayrollEditor({
                 aria-label="명세서 구분"
                 value={p.kind}
                 onChange={(e) =>
-                  edit("kind", e.target.value as Payslip["kind"])
+                  setP((old) => {
+                    const next = {
+                      ...old,
+                      kind: e.target.value as Payslip["kind"],
+                      status: "draft" as const,
+                    };
+                    if (isPayrollReference(next)) {
+                      next.period = null;
+                      next.gross = null;
+                      next.deducted = null;
+                      next.net = null;
+                      next.earnings = [];
+                      next.deductions = [];
+                    }
+                    return next;
+                  })
                 }
               >
-                {["급여", "상여", "연말정산", "기타"].map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
+                {["급여", "상여", "연말정산", "연간소득", "퇴직금", "기타"].map(
+                  (k) => (
+                    <option key={k}>{k}</option>
+                  ),
+                )}
               </select>
             </label>
             <label>
@@ -710,35 +813,73 @@ function PayrollEditor({
               />
             </label>
           </div>
-          {(["earnings", "deductions"] as const).map((key) => (
-            <section className="payroll-entry-section" key={key}>
-              <h3>
-                {key === "earnings" ? "지급 세부 항목" : "공제 세부 항목"}
-              </h3>
-              {p[key].map((row, i) => (
-                <div className="payroll-entry" key={row.id}>
+          {isPayrollReference(p) ? (
+            <section className="payroll-entry-section">
+              <h3>분석한 참고 항목</h3>
+              <p className="muted">
+                연간 소득·퇴직금 자료는 월급 총액과 합산하지 않습니다.
+              </p>
+              <div className="form-row">
+                <label>
+                  기준 연도
                   <input
-                    aria-label={`${key === "earnings" ? "지급" : "공제"} 항목 ${i + 1} 이름`}
-                    value={row.label}
-                    maxLength={80}
-                    placeholder="항목명"
+                    aria-label="급여 참고 기준 연도"
+                    type="number"
+                    min={1900}
+                    max={2200}
+                    value={p.referenceYear ?? ""}
                     onChange={(e) =>
                       edit(
-                        key,
-                        p[key].map((v) =>
-                          v.id === row.id ? { ...v, label: e.target.value } : v,
+                        "referenceYear",
+                        e.target.value ? Number(e.target.value) : null,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  기준일
+                  <input
+                    aria-label="급여 참고 기준일"
+                    type="date"
+                    value={p.referenceDate ?? ""}
+                    onChange={(e) =>
+                      edit("referenceDate", e.target.value || null)
+                    }
+                  />
+                </label>
+              </div>
+              {p.referenceValues?.map((r, i) => (
+                <div className="payroll-entry" key={r.id}>
+                  <input
+                    aria-label={`참고 항목 ${i + 1} 이름`}
+                    value={r.label}
+                    onChange={(e) =>
+                      edit(
+                        "referenceValues",
+                        p.referenceValues?.map((v) =>
+                          v.id === r.id ? { ...v, label: e.target.value } : v,
                         ),
                       )
                     }
                   />
-                  <SignedMoney
-                    label={`${key === "earnings" ? "지급" : "공제"} 항목 ${i + 1} 금액`}
-                    value={row.amount}
-                    onChange={(n) =>
+                  <input
+                    aria-label={`참고 항목 ${i + 1} 값`}
+                    type="number"
+                    step="any"
+                    value={r.amount ?? ""}
+                    onChange={(e) =>
                       edit(
-                        key,
-                        p[key].map((v) =>
-                          v.id === row.id ? { ...v, amount: n } : v,
+                        "referenceValues",
+                        p.referenceValues?.map((v) =>
+                          v.id === r.id
+                            ? {
+                                ...v,
+                                amount:
+                                  e.target.value === ""
+                                    ? null
+                                    : Number(e.target.value),
+                              }
+                            : v,
                         ),
                       )
                     }
@@ -746,11 +887,10 @@ function PayrollEditor({
                   <Button
                     type="button"
                     variant="ghost"
-                    aria-label={`${key === "earnings" ? "지급" : "공제"} 항목 ${i + 1} 삭제`}
                     onClick={() =>
                       edit(
-                        key,
-                        p[key].filter((v) => v.id !== row.id),
+                        "referenceValues",
+                        p.referenceValues?.filter((v) => v.id !== r.id),
                       )
                     }
                   >
@@ -762,69 +902,144 @@ function PayrollEditor({
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  edit(key, [
-                    ...p[key],
-                    { id: crypto.randomUUID(), label: "", amount: null },
+                  edit("referenceValues", [
+                    ...(p.referenceValues ?? []),
+                    {
+                      id: crypto.randomUUID(),
+                      label: "",
+                      amount: null,
+                      unit: "원",
+                    },
                   ])
                 }
               >
-                {key === "earnings" ? "지급 항목 추가" : "공제 항목 추가"}
+                참고 항목 추가
               </Button>
             </section>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              const sum = (rows: Payslip["earnings"], old: number | null) =>
-                rows.length && rows.every((r) => r.amount !== null)
-                  ? rows.reduce((s, r) => s + r.amount!, 0)
-                  : old;
-              const gross = sum(p.earnings, p.gross),
-                deducted = sum(p.deductions, p.deducted);
-              setP((old) => ({
-                ...old,
-                gross,
-                deducted,
-                net:
-                  gross !== null && deducted !== null
-                    ? gross - deducted
-                    : old.net,
-              }));
-            }}
-          >
-            세부 항목 합계로 총액 채우기
-          </Button>
-          <div className="payroll-total-inputs">
-            <label>
-              지급액 합계
-              <SignedMoney
-                label="급여 지급액 합계"
-                value={p.gross}
-                onChange={(n) => edit("gross", n)}
-              />
-            </label>
-            <label>
-              공제액 합계
-              <SignedMoney
-                label="급여 공제액 합계"
-                value={p.deducted}
-                onChange={(n) => edit("deducted", n)}
-              />
-            </label>
-            <label>
-              실수령액
-              <SignedMoney
-                label="급여 실수령액"
-                value={p.net}
-                onChange={(n) => edit("net", n)}
-              />
-            </label>
-          </div>
-          <p className="muted">
-            빈 금액은 미확인으로 남깁니다. 환급·정산 금액은 음수로 입력할 수
-            있습니다.
-          </p>
+          ) : (
+            <>
+              {(["earnings", "deductions"] as const).map((key) => (
+                <section className="payroll-entry-section" key={key}>
+                  <h3>
+                    {key === "earnings" ? "지급 세부 항목" : "공제 세부 항목"}
+                  </h3>
+                  {p[key].map((row, i) => (
+                    <div className="payroll-entry" key={row.id}>
+                      <input
+                        aria-label={`${key === "earnings" ? "지급" : "공제"} 항목 ${i + 1} 이름`}
+                        value={row.label}
+                        maxLength={80}
+                        placeholder="항목명"
+                        onChange={(e) =>
+                          edit(
+                            key,
+                            p[key].map((v) =>
+                              v.id === row.id
+                                ? { ...v, label: e.target.value }
+                                : v,
+                            ),
+                          )
+                        }
+                      />
+                      <SignedMoney
+                        label={`${key === "earnings" ? "지급" : "공제"} 항목 ${i + 1} 금액`}
+                        value={row.amount}
+                        onChange={(n) =>
+                          edit(
+                            key,
+                            p[key].map((v) =>
+                              v.id === row.id ? { ...v, amount: n } : v,
+                            ),
+                          )
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label={`${key === "earnings" ? "지급" : "공제"} 항목 ${i + 1} 삭제`}
+                        onClick={() =>
+                          edit(
+                            key,
+                            p[key].filter((v) => v.id !== row.id),
+                          )
+                        }
+                      >
+                        삭제
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      edit(key, [
+                        ...p[key],
+                        { id: crypto.randomUUID(), label: "", amount: null },
+                      ])
+                    }
+                  >
+                    {key === "earnings" ? "지급 항목 추가" : "공제 항목 추가"}
+                  </Button>
+                </section>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  const sum = (
+                    rows: Payslip["earnings"],
+                    old: number | null,
+                  ) =>
+                    rows.length && rows.every((r) => r.amount !== null)
+                      ? rows.reduce((s, r) => s + r.amount!, 0)
+                      : old;
+                  const gross = sum(p.earnings, p.gross),
+                    deducted = sum(p.deductions, p.deducted);
+                  setP((old) => ({
+                    ...old,
+                    gross,
+                    deducted,
+                    net:
+                      gross !== null && deducted !== null
+                        ? gross - deducted
+                        : old.net,
+                  }));
+                }}
+              >
+                세부 항목 합계로 총액 채우기
+              </Button>
+              <div className="payroll-total-inputs">
+                <label>
+                  지급액 합계
+                  <SignedMoney
+                    label="급여 지급액 합계"
+                    value={p.gross}
+                    onChange={(n) => edit("gross", n)}
+                  />
+                </label>
+                <label>
+                  공제액 합계
+                  <SignedMoney
+                    label="급여 공제액 합계"
+                    value={p.deducted}
+                    onChange={(n) => edit("deducted", n)}
+                  />
+                </label>
+                <label>
+                  실수령액
+                  <SignedMoney
+                    label="급여 실수령액"
+                    value={p.net}
+                    onChange={(n) => edit("net", n)}
+                  />
+                </label>
+              </div>
+              <p className="muted">
+                빈 금액은 미확인으로 남깁니다. 환급·정산 금액은 음수로 입력할 수
+                있습니다.
+              </p>
+            </>
+          )}
           <label>
             메모
             <textarea
