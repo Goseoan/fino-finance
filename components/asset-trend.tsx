@@ -1,4 +1,5 @@
 "use client";
+import { AssetJournal } from "./asset-journal";
 import { ASSET_TYPES, orderedLabels, groupAssets } from "@/lib/classification";
 import { useId, useState } from "react";
 import {
@@ -298,6 +299,7 @@ export function AssetTrend({
           <p className="empty">선택한 항목의 상세 기록이 없습니다.</p>
         )}
       </div>
+      {!category && asset && <AssetJournal state={state} assetId={asset.id} />}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   groupAssets,
 } from "@/lib/classification";
 import { HistoryImport } from "./history-import";
+import { CASH_TYPES, cashType, groupCashAssets } from "@/lib/cash-types";
 import { MoneyInput } from "./ui/money-input";
 import { formatMoneyInput } from "@/lib/money-input";
 import { useEffect, useState, useRef } from "react";
@@ -114,6 +115,7 @@ export default function FinanceApp() {
   const [rate, setRate] = useState("4.3");
   const [selectedLoanId, setSelectedLoanId] = useState("");
   const [assetFilter, setAssetFilter] = useState<string | null>(null);
+  const [cashFilter, setCashFilter] = useState("");
   const [query, setQuery] = useState("");
   const [trendId, setTrendId] = useState<string | null>(null);
   const [oauth, setOauth] = useState("");
@@ -390,11 +392,25 @@ export default function FinanceApp() {
     ]),
   ];
   const assetTypeLabels = orderedLabels(categories, ASSET_TYPES);
+  const cashTypeLabels = orderedLabels(
+    [
+      ...CASH_TYPES,
+      ...state.assets
+        .filter(
+          (a) => !a.deletedAt && classificationLabel(a.category) === "현금",
+        )
+        .map(cashType),
+    ],
+    CASH_TYPES,
+  );
   const visibleAssets = state.assets.filter(
     (a) =>
       !a.deletedAt &&
       (assetFilter === null ||
         classificationLabel(a.category) === assetFilter) &&
+      (!cashFilter ||
+        (classificationLabel(a.category) === "현금" &&
+          cashType(a) === cashFilter)) &&
       (a.name + " " + a.institution)
         .toLocaleLowerCase("ko-KR")
         .includes(query.trim().toLocaleLowerCase("ko-KR")),
@@ -887,7 +903,10 @@ export default function FinanceApp() {
                     {[null, ...assetTypeLabels].map((x) => (
                       <button
                         key={x === null ? "all-types" : `type-${x}`}
-                        onClick={() => setAssetFilter(x)}
+                        onClick={() => {
+                          setAssetFilter(x);
+                          if (x !== null && x !== "현금") setCashFilter("");
+                        }}
                         aria-pressed={assetFilter === x}
                         className={assetFilter === x ? "selected" : ""}
                       >
@@ -899,6 +918,17 @@ export default function FinanceApp() {
                       </button>
                     ))}
                   </div>
+                  <select
+                    aria-label="현금 세부 유형 필터"
+                    value={cashFilter}
+                    disabled={assetFilter !== null && assetFilter !== "현금"}
+                    onChange={(e) => setCashFilter(e.target.value)}
+                  >
+                    <option value="">모든 현금 세부 유형</option>
+                    {cashTypeLabels.map((type) => (
+                      <option key={type}>{type}</option>
+                    ))}
+                  </select>
                   <div className="search-field">
                     <Search size={16} />
                     <input
@@ -945,77 +975,112 @@ export default function FinanceApp() {
                             활성 평가액 <b>{won(group.total)}원</b>
                           </span>
                         </h2>
-                        <div className="asset-grid">
-                          {group.items.map((a, i) => (
-                            <article
-                              key={a.id}
-                              className={`asset-card panel ${!a.active ? "inactive" : ""}`}
-                            >
-                              <div className="asset-card-top">
-                                <span className={`bank-icon bank-${i % 3}`}>
-                                  {a.institution.slice(0, 1) || "자"}
-                                </span>
-                                <span className="tag">
-                                  {classificationLabel(a.category)} ·{" "}
-                                  {a.active ? "활성" : "비활성"}
-                                </span>
-                              </div>
-                              <h3>{a.name}</h3>
-                              <p>{a.institution}</p>
-                              <strong>
-                                {won(a.value)}
-                                <small>원</small>
-                              </strong>
-                              <div className="asset-card-footer">
-                                <span>
-                                  {a.principal !== null
-                                    ? `평가손익 ${a.value - a.principal >= 0 ? "+" : ""}${won(a.value - a.principal)}원`
-                                    : "투자원금 미입력"}
-                                </span>
-                                <span>
-                                  {a.principal !== null && a.principal > 0
-                                    ? `${((a.value / a.principal - 1) * 100).toFixed(1)}%`
-                                    : "—"}
-                                </span>
-                              </div>
-                              <div className="asset-date">
-                                {a.date} 평가 ·{" "}
-                                {readOnly ? "읽기 전용" : "수기 기록"}
-                              </div>
-                              <div className="asset-card-actions">
-                                <Button
-                                  variant="outline"
-                                  onClick={() => setTrendId(a.id)}
-                                  aria-label={`${a.name} 변경 추이`}
+                        {(group.label === "현금"
+                          ? groupCashAssets(group.items)
+                          : [
+                              {
+                                label: "",
+                                items: group.items,
+                                count: group.count,
+                                total: group.total,
+                              },
+                            ]
+                        ).map((subgroup) => (
+                          <div key={subgroup.label || group.label}>
+                            {subgroup.label && (
+                              <h3 className="cash-group-heading">
+                                {subgroup.label}{" "}
+                                <small>
+                                  {subgroup.count}개 · 활성 평가액{" "}
+                                  {won(subgroup.total)}원
+                                </small>
+                              </h3>
+                            )}
+                            <div className="asset-grid">
+                              {subgroup.items.map((a, i) => (
+                                <article
+                                  key={a.id}
+                                  className={`asset-card panel ${!a.active ? "inactive" : ""}`}
                                 >
-                                  <ChartNoAxesCombined size={15} />
-                                  변경 추이
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  className="danger"
-                                  disabled={readOnly || busy}
-                                  aria-label={`${a.name} 자산 삭제`}
-                                  onClick={() =>
-                                    requestDelete("asset", [a.id], a.name)
-                                  }
-                                >
-                                  <Trash2 size={15} />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  disabled={readOnly}
-                                  onClick={() =>
-                                    setEditor({ kind: "asset", value: a })
-                                  }
-                                  aria-label={`${a.name} 자산 수정`}
-                                >
-                                  수정
-                                </Button>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
+                                  <div className="asset-card-top">
+                                    <span className={`bank-icon bank-${i % 3}`}>
+                                      {a.institution.slice(0, 1) || "자"}
+                                    </span>
+                                    <span className="tag">
+                                      {classificationLabel(a.category)} ·{" "}
+                                      {a.active ? "활성" : "비활성"}
+                                    </span>
+                                  </div>
+                                  {group.label === "현금" ? (
+                                    <h4>{a.name}</h4>
+                                  ) : (
+                                    <h3>{a.name}</h3>
+                                  )}
+                                  {group.label === "현금" && (
+                                    <p className="cash-type-note">
+                                      {cashType(a)} ·{" "}
+                                      {a.cashType
+                                        ? "직접 지정"
+                                        : "이름 기반 제안"}
+                                    </p>
+                                  )}
+                                  <p>{a.institution}</p>
+                                  <strong>
+                                    {won(a.value)}
+                                    <small>원</small>
+                                  </strong>
+                                  <div className="asset-card-footer">
+                                    <span>
+                                      {a.principal !== null
+                                        ? `평가손익 ${a.value - a.principal >= 0 ? "+" : ""}${won(a.value - a.principal)}원`
+                                        : "투자원금 미입력"}
+                                    </span>
+                                    <span>
+                                      {a.principal !== null && a.principal > 0
+                                        ? `${((a.value / a.principal - 1) * 100).toFixed(1)}%`
+                                        : "—"}
+                                    </span>
+                                  </div>
+                                  <div className="asset-date">
+                                    {a.date} 평가 ·{" "}
+                                    {readOnly ? "읽기 전용" : "수기 기록"}
+                                  </div>
+                                  <div className="asset-card-actions">
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => setTrendId(a.id)}
+                                      aria-label={`${a.name} 변경 추이`}
+                                    >
+                                      <ChartNoAxesCombined size={15} />
+                                      변경 추이
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      className="danger"
+                                      disabled={readOnly || busy}
+                                      aria-label={`${a.name} 자산 삭제`}
+                                      onClick={() =>
+                                        requestDelete("asset", [a.id], a.name)
+                                      }
+                                    >
+                                      <Trash2 size={15} />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      disabled={readOnly}
+                                      onClick={() =>
+                                        setEditor({ kind: "asset", value: a })
+                                      }
+                                      aria-label={`${a.name} 자산 수정`}
+                                    >
+                                      수정
+                                    </Button>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </section>
                     ))}
                     {!visibleAssets.length && (
@@ -1325,7 +1390,10 @@ export default function FinanceApp() {
               <>
                 <HistoryImport
                   enabled={state.mode === "sheets"}
-                  onImported={async () => {await load();setToast("과거 자산 상세 기록을 반영했습니다.");}}
+                  onImported={async () => {
+                    await load();
+                    setToast("과거 자산 상세 기록을 반영했습니다.");
+                  }}
                 />
                 {!!state.assetHistory?.length && (
                   <Panel

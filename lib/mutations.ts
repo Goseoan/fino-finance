@@ -33,6 +33,7 @@ function refreshCurrent(s: State) {
 }
 function purgeAssetReferences(state: State, id: string) {
   state.assets = state.assets.filter((a) => a.id !== id);
+  state.audit = state.audit.filter((row) => row.assetId !== id);
   const clean = (p: State["snapshots"][number]) => ({
     ...p,
     values: Object.fromEntries(
@@ -50,6 +51,15 @@ function purgeAssetReferences(state: State, id: string) {
   state.assetHistory = state.assetHistory?.map(cleanImported);
   state.trash = state.trash?.flatMap((t) => {
     if (t.entity === "asset" && (t.data as { id: string }).id === id) return [];
+    if (t.entity === "audit" && Array.isArray(t.data))
+      return [
+        {
+          ...t,
+          data: t.data.filter(
+            (row: { assetId?: string }) => row.assetId !== id,
+          ),
+        },
+      ];
     if (t.entity === "record") {
       const data = t.data as {
         snapshot?: State["snapshots"][number];

@@ -373,3 +373,18 @@ test("historical details appear in item trends without replacing current balance
  await expect(page.getByRole('status')).toContainText('저장');
  const current=await(await request.get('/api/state')).json();expect(current.assets).toEqual(s.assets);expect(current.assetHistory).toHaveLength(1);
 });
+
+test('cash subtype saves and same-day corrections have a persisted before-after journal',async({page,request})=>{
+ await page.goto('/');await page.getByRole('button',{name:'자산 관리',exact:true}).click();await page.getByRole('button',{name:'그리드 보기',exact:true}).click();
+ await page.getByLabel('생활비 통장 현금 세부 유형',{exact:true}).selectOption('입출금');
+ const input=page.getByLabel('생활비 통장 그리드 평가액',{exact:true});await input.fill('5000000');
+ await page.getByRole('button',{name:'일괄 저장',exact:true}).click();await expect(page.getByRole('status')).toContainText('저장');
+ await input.fill('5500000');const saved=page.waitForResponse(r=>r.url().endsWith('/api/state')&&r.request().method()==='POST');await page.getByRole('button',{name:'일괄 저장',exact:true}).click();expect((await saved).ok()).toBe(true);await expect(input).toHaveValue('5,500,000');
+ await page.reload();await page.getByRole('button',{name:'자산 관리',exact:true}).click();await page.getByRole('button',{name:'카드 보기',exact:true}).click();
+ await page.getByLabel('현금 세부 유형 필터').selectOption('입출금');await expect(page.locator('.asset-card')).toHaveCount(1);
+ await page.getByRole('button',{name:'생활비 통장 변경 추이',exact:true}).click();
+ const dialog=page.getByRole('dialog');await dialog.getByText('잔액 수정 전후 이력 (2건)',{exact:true}).click();
+ await expect(dialog.getByRole('img',{name:'자산 잔액 수정 이력 차트'})).toBeVisible();
+ await expect(dialog.locator('.asset-journal tbody tr')).toHaveCount(2);
+ const s=await(await request.get('/api/state')).json();const asset=s.assets.find((a:any)=>a.name==='생활비 통장');expect(asset.cashType).toBe('입출금');const events=s.audit.filter((e:any)=>e.assetId===asset.id);expect(events).toHaveLength(2);expect(events[0].beforeValue).toBe(5000000);expect(events[0].afterValue).toBe(5500000);
+});

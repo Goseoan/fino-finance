@@ -1,5 +1,6 @@
 "use client";
 import { cashflowLabel } from "@/lib/classification";
+import { CASH_TYPES, cashType } from "@/lib/cash-types";
 import { MoneyInput } from "./ui/money-input";
 import { EXPENSE_PURPOSES, expensePurpose } from "@/lib/expense-purpose";
 import { Controller, useForm } from "react-hook-form";
@@ -30,6 +31,7 @@ export function AssetForm({
   const {
     register,
     control,
+    watch,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<Asset>({
@@ -68,6 +70,31 @@ export function AssetForm({
             <input {...register("institution")} />
           </label>
         </div>
+        {watch("category")?.trim() === "현금" && (
+          <label>
+            현금 세부 유형
+            <select
+              aria-label="현금 세부 유형"
+              {...register("cashType", { setValueAs: (v) => v || undefined })}
+            >
+              <option value="">
+                자동 분류 (
+                {cashType({ name: watch("name"), category: watch("category") })}
+                )
+              </option>
+              {asset?.cashType &&
+                !CASH_TYPES.some((type) => type === asset.cashType) && (
+                  <option value={asset.cashType}>{asset.cashType}</option>
+                )}
+              {CASH_TYPES.map((type) => (
+                <option key={type}>{type}</option>
+              ))}
+            </select>
+            <small>
+              이름 기반 제안입니다. 실제 상품을 확인해 직접 지정할 수 있습니다.
+            </small>
+          </label>
+        )}
         <div className="form-row">
           <label>
             평가액 (원)

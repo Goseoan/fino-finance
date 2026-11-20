@@ -1,7 +1,9 @@
 "use client";
 import { groupAssets } from "@/lib/classification";
+import { CASH_TYPES, cashType, groupCashAssets } from "@/lib/cash-types";
+import { classificationLabel } from "@/lib/classification";
 import { MoneyInput } from "./ui/money-input";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   ArrowDownUp,
   ChartNoAxesCombined,
@@ -57,7 +59,7 @@ export function AssetGrid({
   function patch(
     a: Asset,
     key: keyof Asset,
-    value: string | number | boolean | null,
+    value: string | number | boolean | null | undefined,
   ) {
     const next = {
       ...drafts,
@@ -138,6 +140,7 @@ export function AssetGrid({
               </th>
               <th>자산명</th>
               <th>유형</th>
+              <th>현금 세부 유형</th>
               <th>금융기관</th>
               <th>
                 <button
@@ -162,7 +165,7 @@ export function AssetGrid({
           {groups.map((group) => (
             <tbody key={group.label}>
               <tr className="asset-grid-group">
-                <th colSpan={9} scope="rowgroup">
+                <th colSpan={10} scope="rowgroup">
                   <div>
                     <span>
                       {group.label}{" "}
@@ -176,136 +179,199 @@ export function AssetGrid({
                   </div>
                 </th>
               </tr>
-              {group.items.map((a) => {
-                const row = drafts[a.id] ?? a;
-                return (
-                  <tr key={a.id} className={drafts[a.id] ? "row-dirty" : ""}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`${a.name} 선택`}
-                        disabled={readOnly || busy}
-                        checked={selected.includes(a.id)}
-                        onChange={(e) =>
-                          setSelected(
-                            e.target.checked
-                              ? [...selected, a.id]
-                              : selected.filter((id) => id !== a.id),
-                          )
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`${a.name} 자산명`}
-                        value={row.name}
-                        disabled={readOnly || busy}
-                        onChange={(e) => patch(a, "name", e.target.value)}
-                      />
-                    </td>
-                    <td>
-                      <select
-                        aria-label={`${a.name} 유형`}
-                        value={row.category}
-                        disabled={readOnly || busy}
-                        onChange={(e) => patch(a, "category", e.target.value)}
+              {(group.label === "현금"
+                ? groupCashAssets(group.items)
+                : [
+                    {
+                      label: "",
+                      items: group.items,
+                      count: group.count,
+                      total: group.total,
+                    },
+                  ]
+              ).map((subgroup) => (
+                <Fragment key={subgroup.label || group.label}>
+                  {subgroup.label && (
+                    <tr className="asset-grid-group asset-cash-row">
+                      <th scope="rowgroup" colSpan={10}>
+                        {subgroup.label} · {subgroup.count}개 · 활성 평가액{" "}
+                        {won(subgroup.total)}원
+                      </th>
+                    </tr>
+                  )}
+                  {subgroup.items.map((a) => {
+                    const row = drafts[a.id] ?? a;
+                    return (
+                      <tr
+                        key={a.id}
+                        className={drafts[a.id] ? "row-dirty" : ""}
                       >
-                        {categories.map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`${a.name} 금융기관`}
-                        value={row.institution}
-                        disabled={readOnly || busy}
-                        onChange={(e) =>
-                          patch(a, "institution", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <MoneyInput
-                        className="numeric"
-                        aria-label={`${a.name} 그리드 평가액`}
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`${a.name} 선택`}
+                            disabled={readOnly || busy}
+                            checked={selected.includes(a.id)}
+                            onChange={(e) =>
+                              setSelected(
+                                e.target.checked
+                                  ? [...selected, a.id]
+                                  : selected.filter((id) => id !== a.id),
+                              )
+                            }
+                          />
+                        </td>
+                        <td>
+                          <input
+                            aria-label={`${a.name} 자산명`}
+                            value={row.name}
+                            disabled={readOnly || busy}
+                            onChange={(e) => patch(a, "name", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            aria-label={`${a.name} 유형`}
+                            value={row.category}
+                            disabled={readOnly || busy}
+                            onChange={(e) =>
+                              patch(a, "category", e.target.value)
+                            }
+                          >
+                            {categories.map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          {classificationLabel(row.category) === "현금" ? (
+                            <select
+                              aria-label={`${a.name} 현금 세부 유형`}
+                              disabled={readOnly || busy}
+                              value={row.cashType ?? ""}
+                              onChange={(e) =>
+                                patch(
+                                  a,
+                                  "cashType",
+                                  e.target.value || undefined,
+                                )
+                              }
+                            >
+                              <option value="">
+                                자동 (
+                                {cashType({ ...row, cashType: undefined })})
+                              </option>
+                              {row.cashType &&
+                                !CASH_TYPES.some(
+                                  (type) => type === row.cashType,
+                                ) && (
+                                  <option value={row.cashType}>
+                                    {row.cashType}
+                                  </option>
+                                )}
+                              {CASH_TYPES.map((type) => (
+                                <option key={type}>{type}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span aria-label="현금 외 자산">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <input
+                            aria-label={`${a.name} 금융기관`}
+                            value={row.institution}
+                            disabled={readOnly || busy}
+                            onChange={(e) =>
+                              patch(a, "institution", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td>
+                          <MoneyInput
+                            className="numeric"
+                            aria-label={`${a.name} 그리드 평가액`}
 
-                        min="0"
-                        value={Number.isNaN(row.value) ? "" : row.value}
-                        disabled={readOnly || busy}
-                        onChange={(e) =>
-                          patch(
-                            a,
-                            "value",
-                            e.target.value === ""
-                              ? NaN
-                              : Number(e.target.value),
-                          )
-                        }
-                      />
-                      <small>
-                        {won(Number.isNaN(row.value) ? 0 : row.value)}원
-                      </small>
-                    </td>
-                    <td>
-                      <MoneyInput
-                        className="numeric"
-                        aria-label={`${a.name} 그리드 투자원금`}
+                            min="0"
+                            value={Number.isNaN(row.value) ? "" : row.value}
+                            disabled={readOnly || busy}
+                            onChange={(e) =>
+                              patch(
+                                a,
+                                "value",
+                                e.target.value === ""
+                                  ? NaN
+                                  : Number(e.target.value),
+                              )
+                            }
+                          />
+                          <small>
+                            {won(Number.isNaN(row.value) ? 0 : row.value)}원
+                          </small>
+                        </td>
+                        <td>
+                          <MoneyInput
+                            className="numeric"
+                            aria-label={`${a.name} 그리드 투자원금`}
 
-                        min="0"
-                        value={row.principal ?? ""}
-                        disabled={readOnly || busy}
-                        onChange={(e) =>
-                          patch(
-                            a,
-                            "principal",
-                            e.target.value === ""
-                              ? null
-                              : Number(e.target.value),
-                          )
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="date"
-                        aria-label={`${a.name} 그리드 평가일`}
-                        value={row.date}
-                        disabled={readOnly || busy}
-                        onChange={(e) => patch(a, "date", e.target.value)}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`${a.name} 활성`}
-                        checked={row.active}
-                        disabled={readOnly || busy}
-                        onChange={(e) => patch(a, "active", e.target.checked)}
-                      />
-                    </td>
-                    <td>
-                      <div className="grid-row-actions">
-                        <button
-                          className="icon-button ghost"
-                          aria-label={`${a.name} 그리드 추이`}
-                          onClick={() => onTrend(a.id)}
-                        >
-                          <ChartNoAxesCombined size={15} />
-                        </button>
-                        <button
-                          className="icon-button danger"
-                          disabled={readOnly || busy || !!edited}
-                          aria-label={`${a.name} 그리드 삭제`}
-                          onClick={() => onDelete([a.id])}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                            min="0"
+                            value={row.principal ?? ""}
+                            disabled={readOnly || busy}
+                            onChange={(e) =>
+                              patch(
+                                a,
+                                "principal",
+                                e.target.value === ""
+                                  ? null
+                                  : Number(e.target.value),
+                              )
+                            }
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="date"
+                            aria-label={`${a.name} 그리드 평가일`}
+                            value={row.date}
+                            disabled={readOnly || busy}
+                            onChange={(e) => patch(a, "date", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`${a.name} 활성`}
+                            checked={row.active}
+                            disabled={readOnly || busy}
+                            onChange={(e) =>
+                              patch(a, "active", e.target.checked)
+                            }
+                          />
+                        </td>
+                        <td>
+                          <div className="grid-row-actions">
+                            <button
+                              className="icon-button ghost"
+                              aria-label={`${a.name} 그리드 추이`}
+                              onClick={() => onTrend(a.id)}
+                            >
+                              <ChartNoAxesCombined size={15} />
+                            </button>
+                            <button
+                              className="icon-button danger"
+                              disabled={readOnly || busy || !!edited}
+                              aria-label={`${a.name} 그리드 삭제`}
+                              onClick={() => onDelete([a.id])}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </tbody>
           ))}
         </table>

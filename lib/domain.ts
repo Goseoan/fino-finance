@@ -16,6 +16,7 @@ const meta = {
 };
 export const assetSchema = z.object({
   ...meta,
+  cashType: z.string().trim().min(1).max(80).optional(),
   category: z.string().min(1),
   institution: z.string(),
   value: amount,
@@ -105,7 +106,15 @@ export const stateSchema = z
       }),
     ),
     audit: z.array(
-      z.object({ id: z.string(), at: z.string(), description: z.string() }),
+      z.object({
+        id: z.string(),
+        at: z.string(),
+        description: z.string(),
+        assetId: z.string().optional(),
+        beforeValue: amount.nullable().optional(),
+        afterValue: amount.optional(),
+        effectiveDate: dateSchema.optional(),
+      }),
     ),
     settings: z.object({
       income: amount,
@@ -278,6 +287,18 @@ export function saveSnapshot(
     at: s.updatedAt,
     description: `${input.date} 자산 기록 · ${Object.keys(input.changes).length}개 변경`,
   });
+  for (const [assetId, afterValue] of Object.entries(input.changes)) {
+    const beforeValue = prior?.values[assetId] ?? null;
+    s.audit.unshift({
+      id: crypto.randomUUID(),
+      at: s.updatedAt,
+      description: "자산 잔액 기록",
+      assetId,
+      beforeValue,
+      afterValue,
+      effectiveDate: input.date,
+    });
+  }
   return stateSchema.parse(s);
 }
 export function seedState(): State {
