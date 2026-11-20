@@ -43,7 +43,7 @@ export function ExpenseTable({
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("전체");
-  const [purpose, setPurpose] = useState("전체");
+  const [purpose, setPurpose] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const data = useMemo(
     () =>
@@ -53,7 +53,7 @@ export function ExpenseTable({
             .toLocaleLowerCase("ko-KR")
             .includes(query.trim().toLocaleLowerCase("ko-KR")) &&
           (category === "전체" || e.category === category) &&
-          (purpose === "전체" ||
+          (purpose === "" ||
             classificationLabel(expensePurpose(e)) === purpose),
       ),
     [expenses, query, category, purpose],
@@ -242,7 +242,7 @@ export function ExpenseTable({
           value={purpose}
           onChange={(e) => setPurpose(e.target.value)}
         >
-          <option value="전체">모든 용도</option>
+          <option value="">모든 용도</option>
           {purposeLabels.map((label) => (
             <option key={label}>{label}</option>
           ))}
@@ -257,15 +257,32 @@ export function ExpenseTable({
             {table.getHeaderGroups().map((g) => (
               <tr key={g.id}>
                 {g.headers.map((h) => (
-                  <th key={h.id}>
-                    <button onClick={h.column.getToggleSortingHandler()}>
-                      {flexRender(h.column.columnDef.header, h.getContext())}
-                      {h.column.getIsSorted() === "asc"
-                        ? " ↑"
-                        : h.column.getIsSorted() === "desc"
-                          ? " ↓"
-                          : ""}
-                    </button>
+                  <th
+                    key={h.id}
+                    aria-sort={
+                      h.column.getCanSort()
+                        ? h.column.getIsSorted() === "asc"
+                          ? "ascending"
+                          : h.column.getIsSorted() === "desc"
+                            ? "descending"
+                            : "none"
+                        : undefined
+                    }
+                  >
+                    {h.column.getCanSort() ? (
+                      <button onClick={h.column.getToggleSortingHandler()}>
+                        {flexRender(h.column.columnDef.header, h.getContext())}
+                        {h.column.getIsSorted() === "asc"
+                          ? " ↑"
+                          : h.column.getIsSorted() === "desc"
+                            ? " ↓"
+                            : ""}
+                      </button>
+                    ) : h.id === "edit" ? (
+                      <span className="sr-only">관리</span>
+                    ) : (
+                      flexRender(h.column.columnDef.header, h.getContext())
+                    )}
                   </th>
                 ))}
               </tr>

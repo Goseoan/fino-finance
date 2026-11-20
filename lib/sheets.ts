@@ -1,3 +1,4 @@
+import { parseHistoricalAssets } from "./historical-assets";
 import {
   googleClient,
   readGoogleConfig,
@@ -72,6 +73,44 @@ export class GoogleSheetsRepository {
         rows: r.data.valueRanges?.[i]?.values ?? [],
       })) as SourceSheet[],
     );
+  }
+  async readHistoricalAssets(assets: State["assets"]) {
+    const { sheets, config } = await this.getClient();
+    const meta = await this.metadata();
+    const names = (meta.sheets ?? [])
+      .map((s) => s.properties?.title ?? "")
+      .filter((name) => /^\d{8}$/.test(name))
+      .sort();
+    if (names.length > 200) throw Error("날짜 탭이 너무 많습니다");
+    const aliasRows =
+      (
+        await sheets.spreadsheets.values.get({
+          spreadsheetId: config.spreadsheetId,
+          range: "'02_자산현황'!A2:D500",
+          valueRenderOption: "UNFORMATTED_VALUE",
+        })
+      ).data.values ?? [];
+    const aliases = assets.map((a) => ({
+      ...a,
+      name: String(aliasRows.find((row) => row[0] === a.id)?.[3] ?? a.name),
+    }));
+    const tabs: SourceSheet[] = [];
+    for (let start = 0; start < names.length; start += 40) {
+      const batch = names.slice(start, start + 40);
+      const response = await sheets.spreadsheets.values.batchGet({
+        spreadsheetId: config.spreadsheetId,
+        ranges: batch.map((name) => `'${name}'!A1:K1000`),
+        valueRenderOption: "UNFORMATTED_VALUE",
+        dateTimeRenderOption: "FORMATTED_STRING",
+      });
+      tabs.push(
+        ...batch.map((name, i) => ({
+          name,
+          rows: response.data.valueRanges?.[i]?.values ?? [],
+        })),
+      );
+    }
+    return parseHistoricalAssets(tabs, assets, aliases);
   }
   private async document() {
     const { sheets, config } = await this.getClient();

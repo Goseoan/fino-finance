@@ -85,6 +85,16 @@ export const stateSchema = z
     expenses: z.array(expenseSchema),
     loans: z.array(loanSchema),
     snapshots: z.array(snapshotSchema),
+    assetHistory: z
+      .array(
+        z.object({
+          date: dateSchema,
+          sourceDate: dateSchema.optional(),
+          values: z.record(z.string(), amount),
+        }),
+      )
+      .max(2000)
+      .optional(),
     history: z.array(
       z.object({
         date: z.string(),
@@ -117,6 +127,12 @@ export const stateSchema = z
     if (new Set(s.snapshots.map((x) => x.date)).size !== s.snapshots.length)
       fail("중복 스냅샷 날짜");
     const ids = new Set(s.assets.map((a) => a.id));
+    const importedDates = (s.assetHistory ?? []).map((p) => p.date);
+    if (new Set(importedDates).size !== importedDates.length)
+      fail("중복 가져오기 날짜");
+    for (const point of s.assetHistory ?? [])
+      if (Object.keys(point.values).some((id) => !ids.has(id)))
+        fail("알 수 없는 과거 자산 참조");
     for (let i = 0; i < s.snapshots.length; i++) {
       const snap = s.snapshots[i];
       if (i && s.snapshots[i - 1].date >= snap.date) fail("스냅샷 날짜 순서");

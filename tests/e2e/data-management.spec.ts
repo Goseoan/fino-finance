@@ -343,3 +343,33 @@ test("custom expense purposes are visible and not silently dropped", async ({pag
  await page.getByRole("button",{name:"주거 관리비 수정",exact:true}).click();
  await expect(page.getByRole("dialog").getByLabel("세부 용도",{exact:true})).toHaveValue("나만의 용도");
 });
+
+test("a custom category named 전체 does not collide with the all filter", async ({page,request})=>{
+ const current=await(await request.get("/api/state")).json();const s=seedState();
+ s.assets[0].category="전체";s.expenses[0].purpose="전체";
+ const r=await request.post("/api/state",{headers:{Origin:origin},data:{kind:"restore",revision:current.revision,state:s,requestId:crypto.randomUUID()}});expect(r.ok()).toBe(true);
+ await page.goto("/");await page.getByRole("button",{name:"자산 관리",exact:true}).click();
+ await page.getByRole("button",{name:"카드 보기",exact:true}).click();
+ const custom=page.getByRole("button",{name:"전체 (사용자 유형)",exact:true});
+ await expect(custom).toBeVisible({timeout:1500});await custom.click();
+ await expect(page.locator(".asset-card")).toHaveCount(1);
+ await page.getByRole("button",{name:"그리드 보기",exact:true}).click();
+ await expect(page.locator(".asset-edit-table tbody tr:not(.asset-grid-group)")).toHaveCount(1);
+ await page.getByRole("button",{name:"전체",exact:true}).click();
+ await expect(page.locator(".asset-edit-table tbody tr:not(.asset-grid-group)")).toHaveCount(s.assets.length);
+ await page.getByRole("button",{name:"고정지출",exact:true}).click();
+ await page.getByLabel("세부 용도 필터").selectOption("전체");
+ await expect(page.locator(".desktop-table tbody tr:not(.expense-group-heading)")).toHaveCount(1);
+});
+
+test("historical details appear in item trends without replacing current balances and can be deleted",async({page,request})=>{
+ const before=await(await request.get('/api/state')).json();const s=seedState(),id=s.assets[0].id;
+ s.assetHistory=[{date:'2025-01-01',sourceDate:'2024-12-30',values:{[id]:0}},{date:'2025-02-01',values:{[id]:1000}}];
+ const response=await request.post('/api/state',{headers:{Origin:origin},data:{kind:'restore',revision:before.revision,state:s,requestId:crypto.randomUUID()}});expect(response.ok()).toBe(true);
+ await page.goto('/');await page.getByRole('button',{name:'자산 관리',exact:true}).click();await page.getByRole('button',{name:'카드 보기',exact:true}).click();await page.getByRole('button',{name:'생활비 통장 변경 추이',exact:true}).click();
+ const dialog=page.getByRole('dialog');await expect(dialog.getByText('시트 가져옴 · 미확인',{exact:true})).toHaveCount(2);await expect(dialog.getByText('원본 기준일 2024-12-30 · 탭 날짜와 다름')).toBeVisible();
+ await page.keyboard.press('Escape');await page.getByRole('button',{name:'이력 및 통계',exact:true}).click();await page.getByRole('button',{name:'2025-01-01 상세 기록 삭제',exact:true}).click();
+ await page.getByRole('button',{name:'확인하고 실행',exact:true}).click();
+ await expect(page.getByRole('status')).toContainText('저장');
+ const current=await(await request.get('/api/state')).json();expect(current.assets).toEqual(s.assets);expect(current.assetHistory).toHaveLength(1);
+});

@@ -5,6 +5,7 @@ import {
   classificationLabel,
   groupAssets,
 } from "@/lib/classification";
+import { HistoryImport } from "./history-import";
 import { MoneyInput } from "./ui/money-input";
 import { formatMoneyInput } from "@/lib/money-input";
 import { useEffect, useState, useRef } from "react";
@@ -112,7 +113,7 @@ export default function FinanceApp() {
   const [preview, setPreview] = useState(false);
   const [rate, setRate] = useState("4.3");
   const [selectedLoanId, setSelectedLoanId] = useState("");
-  const [assetFilter, setAssetFilter] = useState("전체");
+  const [assetFilter, setAssetFilter] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [trendId, setTrendId] = useState<string | null>(null);
   const [oauth, setOauth] = useState("");
@@ -392,7 +393,7 @@ export default function FinanceApp() {
   const visibleAssets = state.assets.filter(
     (a) =>
       !a.deletedAt &&
-      (assetFilter === "전체" ||
+      (assetFilter === null ||
         classificationLabel(a.category) === assetFilter) &&
       (a.name + " " + a.institution)
         .toLocaleLowerCase("ko-KR")
@@ -883,14 +884,18 @@ export default function FinanceApp() {
                 </div>
                 <div className="asset-toolbar">
                   <div className="filter-tabs">
-                    {["전체", ...assetTypeLabels].map((x) => (
+                    {[null, ...assetTypeLabels].map((x) => (
                       <button
-                        key={x}
+                        key={x === null ? "all-types" : `type-${x}`}
                         onClick={() => setAssetFilter(x)}
                         aria-pressed={assetFilter === x}
                         className={assetFilter === x ? "selected" : ""}
                       >
-                        {x}
+                        {x === null
+                          ? "전체"
+                          : x === "전체"
+                            ? "전체 (사용자 유형)"
+                            : x}
                       </button>
                     ))}
                   </div>
@@ -1318,6 +1323,45 @@ export default function FinanceApp() {
             )}
             {section === "이력 및 통계" && (
               <>
+                <HistoryImport
+                  enabled={state.mode === "sheets"}
+                  onImported={async () => {await load();setToast("과거 자산 상세 기록을 반영했습니다.");}}
+                />
+                {!!state.assetHistory?.length && (
+                  <Panel
+                    title="가져온 과거 상세 기록"
+                    subtitle="현재 잔액과 분리된 미확인 원본 기록입니다."
+                  >
+                    <div className="history-list">
+                      {[...state.assetHistory].reverse().map((record) => (
+                        <div className="history-row" key={record.date}>
+                          <div>
+                            <b>{record.date}</b>
+                            <p>
+                              {Object.keys(record.values).length}개 항목 · 시트
+                              가져옴 · 미확인
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            className="danger"
+                            disabled={readOnly || busy}
+                            aria-label={`${record.date} 상세 기록 삭제`}
+                            onClick={() =>
+                              requestDelete(
+                                "record",
+                                [record.date],
+                                record.date,
+                              )
+                            }
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </Panel>
+                )}
                 <Panel
                   title="항목별 변경 추이"
                   subtitle="자산과 카테고리를 골라 상세 기록을 비교하세요."

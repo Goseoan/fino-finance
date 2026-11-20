@@ -41,16 +41,29 @@ function purgeAssetReferences(state: State, id: string) {
     confirmed: p.confirmed.filter((k) => k !== id),
   });
   state.snapshots = state.snapshots.map(clean);
+  const cleanImported = (p: NonNullable<State["assetHistory"]>[number]) => ({
+    ...p,
+    values: Object.fromEntries(
+      Object.entries(p.values).filter(([key]) => key !== id),
+    ),
+  });
+  state.assetHistory = state.assetHistory?.map(cleanImported);
   state.trash = state.trash?.flatMap((t) => {
     if (t.entity === "asset" && (t.data as { id: string }).id === id) return [];
     if (t.entity === "record") {
-      const data = t.data as { snapshot?: State["snapshots"][number] };
+      const data = t.data as {
+        snapshot?: State["snapshots"][number];
+        assetHistory?: State["assetHistory"];
+      };
       return [
         {
           ...t,
           data: {
             ...data,
             ...(data.snapshot ? { snapshot: clean(data.snapshot) } : {}),
+            ...(data.assetHistory
+              ? { assetHistory: data.assetHistory.map(cleanImported) }
+              : {}),
           },
         },
       ];
@@ -100,11 +113,14 @@ export function mutateState(original: State, input: unknown): State {
       } else if (op.entity === "record") {
         const snapshot = s.snapshots.find((x) => x.date === id),
           history = s.history.filter((x) => x.date === id);
-        if (!snapshot && !history.length) throw Error("삭제할 기록이 없습니다");
-        push("record", id, { snapshot, history });
+        const imported = s.assetHistory?.filter((x) => x.date === id) ?? [];
+        if (!snapshot && !history.length && !imported.length)
+          throw Error("삭제할 기록이 없습니다");
+        push("record", id, { snapshot, history, assetHistory: imported });
+        s.assetHistory = s.assetHistory?.filter((x) => x.date !== id);
         s.snapshots = s.snapshots.filter((x) => x.date !== id);
         s.history = s.history.filter((x) => x.date !== id);
-        refreshCurrent(s);
+        if (snapshot) refreshCurrent(s);
       } else {
         const row = s.audit.find((x) => x.id === id);
         if (!row) throw Error("삭제할 이력이 없습니다");
@@ -129,6 +145,7 @@ export function mutateState(original: State, input: unknown): State {
       expenses: [],
       loans: [],
       snapshots: [],
+      assetHistory: [],
       history: [],
       audit: [],
       trash: [],
@@ -148,6 +165,7 @@ export function mutateState(original: State, input: unknown): State {
           s.loans.length ||
           s.snapshots.length ||
           s.history.length ||
+          s.assetHistory?.length ||
           s.settings.income !== 0 ||
           s.settings.annualIncome !== 0
         )
@@ -172,17 +190,24 @@ export function mutateState(original: State, input: unknown): State {
         const data = item.data as {
           snapshot?: State["snapshots"][number];
           history: State["history"];
+          assetHistory?: State["assetHistory"];
         };
         if (
           s.snapshots.some((x) => x.date === item.label) ||
-          s.history.some((x) => x.date === item.label)
+          s.history.some((x) => x.date === item.label) ||
+          s.assetHistory?.some((x) => x.date === item.label)
         )
           throw Error("같은 날짜의 기록이 있어 복원할 수 없습니다");
         if (data.snapshot) s.snapshots.push(data.snapshot);
         s.history.push(...data.history);
+        if (data.assetHistory?.length)
+          s.assetHistory = [
+            ...(s.assetHistory ?? []),
+            ...data.assetHistory,
+          ].sort((a, b) => a.date.localeCompare(b.date));
         s.snapshots.sort((a, b) => a.date.localeCompare(b.date));
         s.history.sort((a, b) => a.date.localeCompare(b.date));
-        refreshCurrent(s);
+        if (data.snapshot) refreshCurrent(s);
       } else if (item.entity === "audit") {
         const rows = item.data as State["audit"];
         if (rows.some((row) => s.audit.some((x) => x.id === row.id)))

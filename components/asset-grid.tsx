@@ -142,9 +142,15 @@ export function AssetGrid({
               <th>
                 <button
                   aria-label="유형 내 평가액 순서 변경"
+                  aria-pressed={descending}
+                  title={
+                    descending
+                      ? "현재 유형 내 평가액 높은 순 · 누르면 이름순"
+                      : "현재 유형 내 이름순 · 누르면 평가액 높은 순"
+                  }
                   onClick={() => setDescending(!descending)}
                 >
-                  평가액 (원) <ArrowDownUp size={12} />
+                  평가액 (원) {descending ? "↓" : ""} <ArrowDownUp size={12} />
                 </button>
               </th>
               <th>투자원금 (원)</th>

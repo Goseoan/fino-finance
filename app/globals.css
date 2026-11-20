@@ -3410,3 +3410,7 @@ td b {
  .asset-group-heading { align-items: flex-start; flex-direction: column; gap: 9px; }
  .expense-panel .table-toolbar select { flex: 1 1 125px; min-width: 0; width: auto; }
 }
+.history-import-panel { padding:24px; margin-bottom:22px; }
+.history-import-panel h2 { font-size:15px; margin-bottom:12px; }
+.history-import-panel p { color:var(--secondary); font-size:12px; line-height:1.8; margin:12px 0; }
+.history-import-preview { margin-top:16px; padding:16px; background:var(--bg); border:1px solid var(--border); border-radius:10px; }

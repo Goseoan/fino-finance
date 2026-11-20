@@ -1,4 +1,5 @@
 "use client";
+import { ASSET_TYPES, orderedLabels, groupAssets } from "@/lib/classification";
 import { useId, useState } from "react";
 import {
   Area,
@@ -25,7 +26,7 @@ export function AssetTrend({
   initialId?: string;
 }) {
   const [selection, setSelection] = useState(
-    `asset:${initialId ?? state.assets[0]?.id ?? ""}`,
+    `asset:${initialId ?? state.assets.find((a) => !a.deletedAt)?.id ?? ""}`,
   );
   const [period, setPeriod] = useState("전체");
   const gradient = useId().replaceAll(":", "");
@@ -44,9 +45,10 @@ export function AssetTrend({
       ? (delta / first.value) * 100
       : null;
   const data = points.map((p) => ({ ...p, time: Date.parse(p.date) }));
-  const categories = [
-    ...new Set(state.assets.filter((a) => !a.deletedAt).map((a) => a.category)),
-  ];
+  const categories = orderedLabels(
+    state.assets.filter((a) => !a.deletedAt).map((a) => a.category),
+    ASSET_TYPES,
+  );
   return (
     <div className="asset-trend-explorer">
       <div className="item-trend-controls">
@@ -58,8 +60,8 @@ export function AssetTrend({
             onChange={(e) => setSelection(e.target.value)}
           >
             <optgroup label="개별 자산">
-              {state.assets
-                .filter((a) => !a.deletedAt)
+              {groupAssets(state.assets)
+                .flatMap((group) => group.items)
                 .map((a) => (
                   <option key={a.id} value={`asset:${a.id}`}>
                     {a.name}
@@ -185,9 +187,11 @@ export function AssetTrend({
                       <span>
                         {p.confirmed
                           ? "확인한 기록"
-                          : state.mode === "imported"
-                            ? "검증 전 기록"
-                            : "이월값 · 미확인"}
+                          : p.imported
+                            ? "시트 가져옴 · 미확인"
+                            : state.mode === "imported"
+                              ? "검증 전 기록"
+                              : "이월값 · 미확인"}
                       </span>
                     </div>
                   ) : null;
@@ -240,7 +244,7 @@ export function AssetTrend({
             : "잔액 증감에는 입출금과 평가액 변화가 함께 포함되며, 투자수익을 의미하지 않습니다."}{" "}
           {state.mode === "imported"
             ? "과거 보관본은 검증 전 값입니다."
-            : "빈 원은 이전 기록의 이월값입니다."}{" "}
+            : "빈 원은 이월값 또는 시트에서 가져온 미확인 기록입니다."}{" "}
           기록 사이의 값은 측정하지 않았습니다.
         </p>
       </div>
@@ -257,12 +261,17 @@ export function AssetTrend({
             <div className="item-trend-record" key={p.date}>
               <div>
                 <b>{p.date}</b>
+                {p.sourceDate && p.sourceDate !== p.date && (
+                  <small>원본 기준일 {p.sourceDate} · 탭 날짜와 다름</small>
+                )}
                 <small>
                   {p.confirmed
                     ? "확인한 잔액"
-                    : state.mode === "imported"
-                      ? "검증 전 기록"
-                      : "이월값 · 미확인"}
+                    : p.imported
+                      ? "시트 가져옴 · 미확인"
+                      : state.mode === "imported"
+                        ? "검증 전 기록"
+                        : "이월값 · 미확인"}
                 </small>
               </div>
               <strong>
