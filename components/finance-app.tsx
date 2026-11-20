@@ -1,5 +1,4 @@
 "use client";
-import { ExpenseClassificationPanel } from "./expense-classification-panel";
 import { StoragePanel, downloadExcel } from "./storage-panel";
 import {
   ASSET_TYPES,
@@ -1162,11 +1161,6 @@ export default function FinanceApp() {
                     <small>원</small>
                   </strong>
                 </div>
-                <ExpenseClassificationPanel
-                  state={state}
-                  disabled={!!readOnly || busy}
-                  onSaved={load}
-                />
                 <ExpenseTable
                   expenses={state.expenses.filter((e) => !e.deletedAt)}
                   onDelete={(e) => requestDelete("expense", [e.id], e.name)}
