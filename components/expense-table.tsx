@@ -20,7 +20,14 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowDownUp, Pencil, Search, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDownUp,
+  Pencil,
+  Search,
+  Plus,
+  Trash2,
+  ChartNoAxesCombined,
+} from "lucide-react";
 import { Expense, monthlyEquivalent, won } from "@/lib/domain";
 import { Button } from "./ui/button";
 const features = tableFeatures({
@@ -33,11 +40,13 @@ export function ExpenseTable({
   onEdit,
   onInline,
   onDelete,
+  onHistory,
   readOnly,
 }: {
   expenses: Expense[];
   onEdit: (e?: Expense) => void;
   onDelete: (e: Expense) => void;
+  onHistory: (e: Expense) => void;
   onInline: (e: Expense) => Promise<void>;
   readOnly: boolean;
 }) {
@@ -155,6 +164,13 @@ export function ExpenseTable({
           <div className="grid-row-actions">
             <button
               className="icon-button ghost"
+              aria-label={`${row.original.name} 지출 수정 이력·추이`}
+              onClick={() => onHistory(row.original)}
+            >
+              <ChartNoAxesCombined size={15} />
+            </button>
+            <button
+              className="icon-button ghost"
               aria-label={`${row.original.name} 수정`}
               disabled={readOnly}
               onClick={() => onEdit(row.original)}
@@ -173,7 +189,7 @@ export function ExpenseTable({
         ),
       },
     ],
-    [onEdit, onInline, onDelete, readOnly],
+    [onEdit, onInline, onDelete, onHistory, readOnly],
   );
   const table = useTable({
     features,
@@ -329,28 +345,37 @@ export function ExpenseTable({
               </small>
             </h3>
             {group.items.map(({ original: e }) => (
-              <button
-                className="mobile-expense"
-                key={e.id}
-                onClick={() => !readOnly && onEdit(e)}
-              >
-                <div>
-                  <b>{e.name}</b>
-                  <span
-                    className="tag expense-category"
-                    data-category={e.category}
-                  >
-                    {cashflowLabel(e.category)}
-                  </span>
-                  <small>
-                    {e.cycle} 납부 · {e.active ? "활성" : "중지"}
-                  </small>
-                </div>
-                <strong>
-                  {won(monthlyEquivalent(e.amount, e.cycle))}원
-                  <small>월 환산</small>
-                </strong>
-              </button>
+              <div className="mobile-expense-entry" key={e.id}>
+                <button
+                  className="mobile-expense"
+                  onClick={() => !readOnly && onEdit(e)}
+                >
+                  <div>
+                    <b>{e.name}</b>
+                    <span
+                      className="tag expense-category"
+                      data-category={e.category}
+                    >
+                      {cashflowLabel(e.category)}
+                    </span>
+                    <small>
+                      {e.cycle} 납부 · {e.active ? "활성" : "중지"}
+                    </small>
+                  </div>
+                  <strong>
+                    {won(monthlyEquivalent(e.amount, e.cycle))}원
+                    <small>월 환산</small>
+                  </strong>
+                </button>
+                <button
+                  className="mobile-item-history"
+                  aria-label={`${e.name} 지출 수정 이력·추이`}
+                  onClick={() => onHistory(e)}
+                >
+                  <ChartNoAxesCombined size={14} />
+                  수정 이력·추이
+                </button>
+              </div>
             ))}
           </section>
         ))}

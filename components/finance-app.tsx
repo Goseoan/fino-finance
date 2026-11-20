@@ -7,6 +7,7 @@ import {
 } from "@/lib/classification";
 import { HistoryImport } from "./history-import";
 import { CASH_TYPES, cashType, groupCashAssets } from "@/lib/cash-types";
+import { ItemHistory } from "./item-history";
 import { MoneyInput } from "./ui/money-input";
 import { formatMoneyInput } from "@/lib/money-input";
 import { useEffect, useState, useRef } from "react";
@@ -98,6 +99,10 @@ export default function FinanceApp() {
   const [period, setPeriod] = useState("1년");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [itemHistory, setItemHistory] = useState<{
+    entity: "expense" | "loan";
+    itemId: string;
+  } | null>(null);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [notifications, setNotifications] = useState(false);
@@ -1142,6 +1147,9 @@ export default function FinanceApp() {
                 <ExpenseTable
                   expenses={state.expenses.filter((e) => !e.deletedAt)}
                   onDelete={(e) => requestDelete("expense", [e.id], e.name)}
+                  onHistory={(e) =>
+                    setItemHistory({ entity: "expense", itemId: e.id })
+                  }
                   onInline={async (e) => {
                     await persist({
                       ...state,
@@ -1227,6 +1235,18 @@ export default function FinanceApp() {
                           subtitle={`${l.method} · ${l.active ? "상환 중" : "상환 완료"}`}
                           action={
                             <div className="grid-row-actions">
+                              <button
+                                className="icon-button ghost"
+                                aria-label={`${l.name} 대출 수정 이력·추이`}
+                                onClick={() =>
+                                  setItemHistory({
+                                    entity: "loan",
+                                    itemId: l.id,
+                                  })
+                                }
+                              >
+                                <ChartNoAxesCombined size={15} />
+                              </button>
                               <button
                                 className="icon-button danger"
                                 disabled={readOnly || busy}
@@ -1857,6 +1877,14 @@ export default function FinanceApp() {
           <Modal title="자산 변경 추이" onClose={() => setTrendId(null)}>
             <AssetTrend state={state} initialId={trendId} />
           </Modal>
+        )}
+        {itemHistory && (
+          <ItemHistory
+            state={state}
+            entity={itemHistory.entity}
+            itemId={itemHistory.itemId}
+            onClose={() => setItemHistory(null)}
+          />
         )}
         {pendingAction && (
           <Modal

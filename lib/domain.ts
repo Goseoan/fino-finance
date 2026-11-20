@@ -52,6 +52,31 @@ export const loanSchema = z.object({
   rateDate: dateSchema.nullable(),
   verified: z.boolean(),
 });
+const changeFields = {
+  itemId: z.string(),
+  action: z.enum(["등록", "수정", "삭제", "복원"]),
+};
+export const itemChangeSchema = z
+  .discriminatedUnion("entity", [
+    z.object({
+      ...changeFields,
+      entity: z.literal("expense"),
+      before: expenseSchema.nullable(),
+      after: expenseSchema,
+    }),
+    z.object({
+      ...changeFields,
+      entity: z.literal("loan"),
+      before: loanSchema.nullable(),
+      after: loanSchema,
+    }),
+  ])
+  .refine(
+    (row) =>
+      row.after.id === row.itemId &&
+      (!row.before || row.before.id === row.itemId),
+    "항목 이력 ID 불일치",
+  );
 const snapshotSchema = z.object({
   date: dateSchema,
   values: z.record(z.string(), amount),
@@ -111,6 +136,7 @@ export const stateSchema = z
         at: z.string(),
         description: z.string(),
         assetId: z.string().optional(),
+        itemChange: itemChangeSchema.optional(),
         beforeValue: amount.nullable().optional(),
         afterValue: amount.optional(),
         effectiveDate: dateSchema.optional(),

@@ -1,3 +1,4 @@
+import { appendItemChanges } from "./item-journal";
 import { z } from "zod";
 import { State, stateSchema, saveSnapshot, applyAssetEdits } from "./domain";
 const request = z.discriminatedUnion("kind", [
@@ -84,6 +85,30 @@ function purgeAssetReferences(state: State, id: string) {
       return [{ ...t, data: saved }];
     }
     return [t];
+  });
+}
+function purgeItemReferences(
+  state: State,
+  entity: "expense" | "loan",
+  id: string,
+) {
+  if (entity === "expense")
+    state.expenses = state.expenses.filter((item) => item.id !== id);
+  else state.loans = state.loans.filter((item) => item.id !== id);
+  const keep = (row: State["audit"][number]) =>
+    !(row.itemChange?.entity === entity && row.itemChange.itemId === id);
+  state.audit = state.audit.filter(keep);
+  state.trash = state.trash?.flatMap((item) => {
+    if (item.entity === entity && (item.data as { id: string }).id === id)
+      return [];
+    if (item.entity === "audit" && Array.isArray(item.data))
+      return [{ ...item, data: item.data.filter(keep) }];
+    if (item.entity === "all") {
+      const archived = stateSchema.parse(item.data);
+      purgeItemReferences(archived, entity, id);
+      return [{ ...item, data: archived }];
+    }
+    return [item];
   });
 }
 export function mutateState(original: State, input: unknown): State {
@@ -252,18 +277,23 @@ export function mutateState(original: State, input: unknown): State {
     } else if (item.entity === "asset") {
       const id = (item.data as { id: string }).id;
       purgeAssetReferences(s, id);
-    } else if (item.entity === "expense")
-      s.expenses = s.expenses.filter(
-        (e) => e.id !== (item.data as { id: string }).id,
-      );
-    else if (item.entity === "loan")
-      s.loans = s.loans.filter(
-        (l) => l.id !== (item.data as { id: string }).id,
-      );
+    } else if (item.entity === "expense" || item.entity === "loan")
+      purgeItemReferences(s, item.entity, (item.data as { id: string }).id);
     s.trash = s.trash?.filter((t) => t.id !== item.id);
   }
   s.revision = original.revision + 1;
   s.updatedAt = at;
+  if (op.kind === "delete" && (op.entity === "expense" || op.entity === "loan"))
+    appendItemChanges(original, s, "삭제");
+  if (
+    op.kind === "restoreTrash" &&
+    original.trash?.some(
+      (item) =>
+        item.id === op.id &&
+        (item.entity === "expense" || item.entity === "loan"),
+    )
+  )
+    appendItemChanges(original, s, "복원");
   if (
     op.kind !== "clearAudit" &&
     op.kind !== "clearAll" &&
@@ -323,6 +353,7 @@ export function applyUpdate(
     });
   next.revision = s.revision + 1;
   next.updatedAt = new Date().toISOString();
+  appendItemChanges(s, next);
   next.audit.unshift({
     id: crypto.randomUUID(),
     at: next.updatedAt,
